@@ -64,6 +64,21 @@
             <artifactId>url-connection-client</artifactId>
         </dependency>
 
+        <!-- Kubernetes manifest + container image + Helm chart generation -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-kubernetes</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-container-image-docker</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkiverse.helm</groupId>
+            <artifactId>quarkus-helm</artifactId>
+            <version>1.4.0</version>
+        </dependency>
+
         <!-- Test dependencies -->
         <dependency>
             <groupId>io.quarkus</groupId>
