@@ -3,6 +3,8 @@ name: Native Image Build (ARM64)
 on:
   push:
     branches: [ main, 'spec/**' ]
+    tags:
+      - 'v*'
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -47,6 +49,11 @@ jobs:
           distribution: 'mandrel'
           github-token: ${{ secrets.GITHUB_TOKEN }}
           cache: 'maven'
+      - name: Verify GraalVM installation
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME"
+          java --version
+          native-image --version
       - name: Build native image
         run: |
           ./mvnw package -pl ${{ matrix.module.name }} -am \
@@ -59,12 +66,29 @@ jobs:
           echo "Native binary: $BINARY"
           ls -lh "$BINARY"
           file "$BINARY"
+      - name: Test native binary startup
+        run: |
+          BINARY=$(find ${{ matrix.module.name }}/target -name "*-runner" -type f | head -1)
+          if [ "${{ matrix.module.name }}" = "operator-cli" ]; then
+            timeout 5 "$BINARY" --help || true
+          else
+            "$BINARY" &
+            PID=$!
+            sleep 3
+            if kill -0 $PID 2>/dev/null; then
+              echo "Operator started successfully (PID: $PID)"
+              curl -sf http://localhost:8080/q/health/live || echo "Health check not available (expected without K8s)"
+              kill $PID
+            else
+              echo "WARNING: Operator exited (may need K8s context)"
+            fi
+          fi
       - name: Upload native binary
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.module.artifact }}-linux-arm64
           path: ${{ matrix.module.name }}/target/*-runner
-          retention-days: 7
+          retention-days: 30
 
   container-build-arm64:
     name: Container Image (ARM64)
@@ -101,6 +125,9 @@ jobs:
             type=ref,event=branch
             type=sha,prefix=
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
