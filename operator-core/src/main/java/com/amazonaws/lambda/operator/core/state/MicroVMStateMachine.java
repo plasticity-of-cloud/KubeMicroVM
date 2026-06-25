@@ -9,7 +9,7 @@ import java.util.Collections;
 import static com.amazonaws.lambda.operator.core.enums.MicroVMState.*;
 import static java.util.Map.entry;
 
-public final class MicroVMStateMachine {
+public class MicroVMStateMachine {
 
     private static final Map<MicroVMState, Set<MicroVMState>> VALID_TRANSITIONS = Map.ofEntries(
         entry(PENDING,      Set.of(CREATING)),
