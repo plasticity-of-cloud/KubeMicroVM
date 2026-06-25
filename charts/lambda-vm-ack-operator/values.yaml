@@ -1,0 +1,44 @@
+# Default values for lambda-vm-ack-operator
+replicaCount: 1
+
+image:
+  repository: ghcr.io/plasticity-of-cloud/lambda-vm-ack-operator
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+aws:
+  region: ""  # Required - must be set during installation
+  irsaRoleArn: ""
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+webhook:
+  certManager:
+    enabled: true
+
+metrics:
+  enabled: true
+
+logging:
+  level: INFO
+
+watchAllNamespaces: true
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

@@ -1,0 +1,26 @@
+# Stage 1: Build CLI native image
+FROM quay.io/quarkus/ubi9-quarkus-mandrel-builder-image:jdk-25 AS builder
+
+COPY --chown=quarkus:quarkus . /code
+WORKDIR /code
+
+USER quarkus
+
+RUN ./mvnw package -pl operator-cli -am -Dnative \
+    -DskipTests \
+    -Dquarkus.native.container-build=false
+
+# Stage 2: Runtime - minimal image with just the binary
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.4
+
+COPY --from=builder /code/operator-cli/target/*-runner /usr/local/bin/kubectl-microvm
+
+RUN chmod 775 /usr/local/bin/kubectl-microvm && \
+    chown 1001:root /usr/local/bin/kubectl-microvm
+
+USER 1001
+
+LABEL org.opencontainers.image.source="https://github.com/plasticity-of-cloud/aws-lambda-vm-ack-java" \
+      org.opencontainers.image.description="kubectl-microvm - kubectl plugin for AWS Lambda MicroVM management"
+
+ENTRYPOINT ["kubectl-microvm"]
