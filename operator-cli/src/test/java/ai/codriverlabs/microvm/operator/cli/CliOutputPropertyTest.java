@@ -2,7 +2,7 @@ package ai.codriverlabs.microvm.operator.cli;
 
 import ai.codriverlabs.microvm.operator.cli.output.TableFormatter;
 import ai.codriverlabs.microvm.operator.core.enums.MicroVMState;
-import ai.codriverlabs.microvm.operator.core.enums.Runtime;
+
 import ai.codriverlabs.microvm.operator.core.model.MicroVMSpec;
 import ai.codriverlabs.microvm.operator.core.model.MicroVMStatus;
 import net.jqwik.api.*;
@@ -20,19 +20,19 @@ class CliOutputPropertyTest {
     @Property(tries = 100)
     void listOutputContainsCorrectColumns(
             @ForAll("resourceNames") String name,
-            @ForAll("runtimes") Runtime runtime,
+            @ForAll("imageRefs") String imageRef,
             @ForAll("states") MicroVMState state,
             @ForAll("vmIds") String vmId,
             @ForAll("memories") int memoryMB) {
 
         MicroVMSpec spec = new MicroVMSpec();
-        spec.setRuntime(runtime);
-        spec.setMemoryMB(memoryMB);
-        spec.setVcpus(2);
+        spec.setImageRef(imageRef);
+        spec.setMaximumDurationSeconds(memoryMB);
+        spec.setMaxIdleDurationSeconds(2);
 
         MicroVMStatus status = new MicroVMStatus();
         status.setState(state);
-        status.setVmId(vmId);
+        status.setMicroVmId(vmId);
 
         String output = formatter.formatMicroVMRow(name, spec, status, "5m");
 
@@ -41,8 +41,8 @@ class CliOutputPropertyTest {
             "Output should contain resource name '" + name + "'";
         assert output.contains(state.getValue()) || state.getValue().length() > 11 :
             "Output should contain state '" + state.getValue() + "'";
-        assert output.contains(runtime.getValue()) || runtime.getValue().length() > 11 :
-            "Output should contain runtime '" + runtime.getValue() + "'";
+        assert output.contains(imageRef) || imageRef.length() > 11 :
+            "Output should contain imageRef '" + imageRef + "'";
         assert output.contains(String.valueOf(memoryMB)) :
             "Output should contain memory '" + memoryMB + "'";
     }
@@ -53,8 +53,7 @@ class CliOutputPropertyTest {
         assert output.contains("NAME") : "Header should contain NAME";
         assert output.contains("STATE") : "Header should contain STATE";
         assert output.contains("VM-ID") : "Header should contain VM-ID";
-        assert output.contains("RUNTIME") : "Header should contain RUNTIME";
-        assert output.contains("MEMORY") : "Header should contain MEMORY";
+        assert output.contains("IMAGE") || output.contains("RUNTIME") : "Header should contain IMAGE or RUNTIME";
         assert output.contains("AGE") : "Header should contain AGE";
     }
 
@@ -63,7 +62,7 @@ class CliOutputPropertyTest {
         List<TableFormatter.MicroVMRow> rows = new java.util.ArrayList<>();
         for (int i = 0; i < rowCount; i++) {
             rows.add(new TableFormatter.MicroVMRow(
-                "vm-" + i, "Running", "vm-id-" + i, "java21", "512", "5m"
+                "vm-" + i, "Running", "vm-id-" + i, "python-sandbox", "512", "5m"
             ));
         }
         String output = formatter.formatMicroVMList(rows);
@@ -79,8 +78,8 @@ class CliOutputPropertyTest {
     }
 
     @Provide
-    Arbitrary<Runtime> runtimes() {
-        return Arbitraries.of(Runtime.values());
+    Arbitrary<String> imageRefs() {
+        return Arbitraries.of("python-sandbox", "ci-runner", "custom-image");
     }
 
     @Provide

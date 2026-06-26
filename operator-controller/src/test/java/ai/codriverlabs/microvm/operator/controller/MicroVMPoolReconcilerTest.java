@@ -1,7 +1,7 @@
 package ai.codriverlabs.microvm.operator.controller;
 
 import ai.codriverlabs.microvm.operator.core.enums.MicroVMState;
-import ai.codriverlabs.microvm.operator.core.enums.Runtime;
+
 import ai.codriverlabs.microvm.operator.core.model.*;
 import io.fabric8.kubernetes.api.model.ObjectMeta;
 import io.fabric8.kubernetes.api.model.OwnerReference;
@@ -158,9 +158,9 @@ class MicroVMPoolReconcilerTest {
         spec.setMaxSurge(maxSurge);
 
         MicroVMSpec template = new MicroVMSpec();
-        template.setRuntime(Runtime.JAVA21);
-        template.setMemoryMB(512);
-        template.setVcpus(2);
+        template.setImageRef("python-sandbox");
+        template.setMaximumDurationSeconds(512);
+        template.setMaxIdleDurationSeconds(2);
         spec.setTemplate(template);
         pool.setSpec(spec);
 
@@ -204,9 +204,9 @@ class MicroVMPoolReconcilerTest {
         vm.setMetadata(meta);
 
         MicroVMSpec spec = new MicroVMSpec();
-        spec.setRuntime(Runtime.JAVA21);
-        spec.setMemoryMB(512);
-        spec.setVcpus(2);
+        spec.setImageRef("python-sandbox");
+        spec.setMaximumDurationSeconds(512);
+        spec.setMaxIdleDurationSeconds(2);
         vm.setSpec(spec);
 
         MicroVMStatus status = new MicroVMStatus();

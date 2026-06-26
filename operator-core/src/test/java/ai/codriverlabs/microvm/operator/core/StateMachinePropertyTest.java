@@ -19,26 +19,18 @@ class StateMachinePropertyTest {
 
     private final MicroVMStateMachine stateMachine = new MicroVMStateMachine();
 
-    // Valid transition pairs from the design document
+    // Valid transition pairs from the state machine implementation
     private static final List<MicroVMState[]> VALID_TRANSITIONS = List.of(
-        new MicroVMState[]{PENDING, CREATING},
-        new MicroVMState[]{CREATING, RUNNING},
-        new MicroVMState[]{CREATING, FAILED},
-        new MicroVMState[]{RUNNING, PAUSED},
-        new MicroVMState[]{RUNNING, STOPPING},
+        new MicroVMState[]{PENDING, RUNNING},
+        new MicroVMState[]{PENDING, FAILED},
+        new MicroVMState[]{RUNNING, SUSPENDING},
         new MicroVMState[]{RUNNING, TERMINATING},
-        new MicroVMState[]{PAUSED, RESUMING},
-        new MicroVMState[]{PAUSED, TERMINATING},
-        new MicroVMState[]{RESUMING, RUNNING},
-        new MicroVMState[]{RESUMING, FAILED},
-        new MicroVMState[]{STOPPING, STOPPED},
-        new MicroVMState[]{STOPPING, FAILED},
-        new MicroVMState[]{STOPPED, STARTING},
-        new MicroVMState[]{STOPPED, TERMINATING},
-        new MicroVMState[]{STARTING, RUNNING},
-        new MicroVMState[]{STARTING, FAILED},
+        new MicroVMState[]{SUSPENDING, SUSPENDED},
+        new MicroVMState[]{SUSPENDING, FAILED},
+        new MicroVMState[]{SUSPENDED, RUNNING},
+        new MicroVMState[]{SUSPENDED, TERMINATING},
         new MicroVMState[]{TERMINATING, TERMINATED},
-        new MicroVMState[]{FAILED, CREATING},
+        new MicroVMState[]{FAILED, PENDING},
         new MicroVMState[]{FAILED, TERMINATING}
     );
 

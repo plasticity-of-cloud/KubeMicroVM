@@ -91,8 +91,8 @@ class PoolScalingPropertyTest {
     @Provide
     Arbitrary<List<MicroVMState>> childStates() {
         return Arbitraries.of(
-            MicroVMState.PENDING, MicroVMState.CREATING, MicroVMState.RUNNING,
-            MicroVMState.STOPPED, MicroVMState.FAILED
+            MicroVMState.PENDING, MicroVMState.PENDING, MicroVMState.RUNNING,
+            MicroVMState.SUSPENDED, MicroVMState.FAILED
         ).list().ofMinSize(0).ofMaxSize(30);
     }
 }

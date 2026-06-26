@@ -1,6 +1,6 @@
 package ai.codriverlabs.microvm.operator.webhook;
 
-import ai.codriverlabs.microvm.operator.core.enums.Runtime;
+
 import ai.codriverlabs.microvm.operator.core.model.MicroVMSpec;
 import ai.codriverlabs.microvm.operator.webhook.validation.MicroVMValidatingWebhook;
 import net.jqwik.api.*;
@@ -22,7 +22,7 @@ class WebhookValidationPropertyTest {
     @Property(tries = 100)
     void validMemoryIsAccepted(@ForAll("validMemory") int memoryMB) {
         MicroVMSpec spec = createValidSpec();
-        spec.setMemoryMB(memoryMB);
+        spec.setMaximumDurationSeconds(memoryMB);
         List<String> errors = webhook.validate(spec, "default");
         assert errors.isEmpty() : "Valid memory " + memoryMB + " should be accepted, got: " + errors;
     }
@@ -31,7 +31,7 @@ class WebhookValidationPropertyTest {
     @Property(tries = 100)
     void invalidMemoryIsRejected(@ForAll("invalidMemory") int memoryMB) {
         MicroVMSpec spec = createValidSpec();
-        spec.setMemoryMB(memoryMB);
+        spec.setMaximumDurationSeconds(memoryMB);
         List<String> errors = webhook.validate(spec, "default");
         assert !errors.isEmpty() : "Invalid memory " + memoryMB + " should be rejected";
     }
@@ -40,7 +40,7 @@ class WebhookValidationPropertyTest {
     @Property(tries = 100)
     void validVcpusAccepted(@ForAll("validVcpus") int vcpus) {
         MicroVMSpec spec = createValidSpec();
-        spec.setVcpus(vcpus);
+        spec.setMaxIdleDurationSeconds(vcpus);
         List<String> errors = webhook.validate(spec, "default");
         assert errors.isEmpty() : "Valid vcpus " + vcpus + " should be accepted, got: " + errors;
     }
@@ -49,7 +49,7 @@ class WebhookValidationPropertyTest {
     @Property(tries = 100)
     void invalidVcpusRejected(@ForAll("invalidVcpus") int vcpus) {
         MicroVMSpec spec = createValidSpec();
-        spec.setVcpus(vcpus);
+        spec.setMaxIdleDurationSeconds(vcpus);
         List<String> errors = webhook.validate(spec, "default");
         assert !errors.isEmpty() : "Invalid vcpus " + vcpus + " should be rejected";
     }
@@ -58,7 +58,7 @@ class WebhookValidationPropertyTest {
     @Property(tries = 100)
     void validTimeoutAccepted(@ForAll("validTimeout") int timeout) {
         MicroVMSpec spec = createValidSpec();
-        spec.setTimeoutSeconds(timeout);
+        spec.setSuspendedDurationSeconds(timeout);
         List<String> errors = webhook.validate(spec, "default");
         assert errors.isEmpty() : "Valid timeout " + timeout + " should be accepted, got: " + errors;
     }
@@ -67,16 +67,16 @@ class WebhookValidationPropertyTest {
     @Property(tries = 100)
     void invalidTimeoutRejected(@ForAll("invalidTimeout") int timeout) {
         MicroVMSpec spec = createValidSpec();
-        spec.setTimeoutSeconds(timeout);
+        spec.setSuspendedDurationSeconds(timeout);
         List<String> errors = webhook.validate(spec, "default");
         assert !errors.isEmpty() : "Invalid timeout " + timeout + " should be rejected";
     }
 
     private MicroVMSpec createValidSpec() {
         MicroVMSpec spec = new MicroVMSpec();
-        spec.setRuntime(Runtime.JAVA21);
-        spec.setMemoryMB(512);
-        spec.setVcpus(2);
+        spec.setImageRef("python-sandbox");
+        spec.setMaximumDurationSeconds(512);
+        spec.setMaxIdleDurationSeconds(2);
         return spec;
     }
 

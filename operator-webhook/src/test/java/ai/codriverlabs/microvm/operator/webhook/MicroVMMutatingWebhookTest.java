@@ -1,6 +1,6 @@
 package ai.codriverlabs.microvm.operator.webhook;
 
-import ai.codriverlabs.microvm.operator.core.enums.Runtime;
+
 import ai.codriverlabs.microvm.operator.core.model.MicroVMSpec;
 import ai.codriverlabs.microvm.operator.webhook.mutation.MicroVMMutatingWebhook;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,66 +18,64 @@ class MicroVMMutatingWebhookTest {
     }
 
     @Test
-    void appliesDefaultTimeoutWhenNull() {
+    void appliesDefaultMaxDurationWhenNull() {
         MicroVMSpec spec = new MicroVMSpec();
-        spec.setRuntime(Runtime.JAVA21);
-        spec.setMemoryMB(512);
-        spec.setVcpus(2);
-        spec.setTimeoutSeconds(null);
+        spec.setImageRef("python-sandbox");
+        spec.setMaximumDurationSeconds(null);
+        spec.setMaxIdleDurationSeconds(2);
 
         MicroVMSpec mutated = webhook.applyDefaults(spec);
-        assertEquals(300, mutated.getTimeoutSeconds());
+        assertEquals(28800, mutated.getMaximumDurationSeconds());
     }
 
     @Test
-    void appliesDefaultMemoryWhenNull() {
+    void appliesDefaultAutoResumeWhenNull() {
         MicroVMSpec spec = new MicroVMSpec();
-        spec.setRuntime(Runtime.JAVA21);
-        spec.setMemoryMB(null);
-        spec.setVcpus(2);
+        spec.setImageRef("python-sandbox");
+        spec.setMaximumDurationSeconds(512);
+        spec.setAutoResumeEnabled(null);
 
         MicroVMSpec mutated = webhook.applyDefaults(spec);
-        assertEquals(512, mutated.getMemoryMB());
+        assertTrue(mutated.getAutoResumeEnabled());
     }
 
     @Test
-    void doesNotOverrideExplicitTimeout() {
+    void doesNotOverrideExplicitMaxDuration() {
         MicroVMSpec spec = new MicroVMSpec();
-        spec.setRuntime(Runtime.JAVA21);
-        spec.setMemoryMB(1024);
-        spec.setVcpus(4);
-        spec.setTimeoutSeconds(600);
+        spec.setImageRef("python-sandbox");
+        spec.setMaximumDurationSeconds(1024);
+        spec.setMaxIdleDurationSeconds(4);
 
         MicroVMSpec mutated = webhook.applyDefaults(spec);
-        assertEquals(600, mutated.getTimeoutSeconds());
+        assertEquals(1024, mutated.getMaximumDurationSeconds());
     }
 
     @Test
-    void doesNotOverrideExplicitMemory() {
+    void doesNotOverrideExplicitAutoResume() {
         MicroVMSpec spec = new MicroVMSpec();
-        spec.setRuntime(Runtime.JAVA21);
-        spec.setMemoryMB(1024);
-        spec.setVcpus(2);
+        spec.setImageRef("python-sandbox");
+        spec.setMaximumDurationSeconds(512);
+        spec.setAutoResumeEnabled(false);
 
         MicroVMSpec mutated = webhook.applyDefaults(spec);
-        assertEquals(1024, mutated.getMemoryMB());
+        assertFalse(mutated.getAutoResumeEnabled());
     }
 
     @Test
     void preservesAllOtherFields() {
         MicroVMSpec spec = new MicroVMSpec();
-        spec.setRuntime(Runtime.PYTHON3_12);
-        spec.setMemoryMB(768);
-        spec.setVcpus(3);
-        spec.setTimeoutSeconds(450);
+        spec.setImageRef("python-sandbox");
+        spec.setMaximumDurationSeconds(768);
+        spec.setMaxIdleDurationSeconds(3);
+        spec.setSuspendedDurationSeconds(450);
         spec.setNetworkRef("my-network");
         spec.setRegion("eu-west-1");
 
         MicroVMSpec mutated = webhook.applyDefaults(spec);
-        assertEquals(Runtime.PYTHON3_12, mutated.getRuntime());
-        assertEquals(768, mutated.getMemoryMB());
-        assertEquals(3, mutated.getVcpus());
-        assertEquals(450, mutated.getTimeoutSeconds());
+        assertEquals("python-sandbox", mutated.getImageRef());
+        assertEquals(768, mutated.getMaximumDurationSeconds());
+        assertEquals(3, mutated.getMaxIdleDurationSeconds());
+        assertEquals(450, mutated.getSuspendedDurationSeconds());
         assertEquals("my-network", mutated.getNetworkRef());
         assertEquals("eu-west-1", mutated.getRegion());
     }

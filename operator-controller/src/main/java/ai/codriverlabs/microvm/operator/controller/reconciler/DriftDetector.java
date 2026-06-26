@@ -2,11 +2,13 @@ package ai.codriverlabs.microvm.operator.controller.reconciler;
 
 import ai.codriverlabs.microvm.operator.core.enums.DesiredState;
 import ai.codriverlabs.microvm.operator.core.enums.MicroVMState;
+import jakarta.enterprise.context.ApplicationScoped;
 
 /**
  * Detects drift between desired state (CR spec) and actual AWS state.
  * Aligned with AWS Lambda MicroVMs API lifecycle (no stop/pause — only suspend/resume/terminate).
  */
+@ApplicationScoped
 public class DriftDetector {
 
     public enum DriftAction {

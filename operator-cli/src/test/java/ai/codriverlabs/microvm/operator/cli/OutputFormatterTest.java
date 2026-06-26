@@ -2,7 +2,7 @@ package ai.codriverlabs.microvm.operator.cli;
 
 import ai.codriverlabs.microvm.operator.cli.output.TableFormatter;
 import ai.codriverlabs.microvm.operator.core.enums.MicroVMState;
-import ai.codriverlabs.microvm.operator.core.enums.Runtime;
+
 import ai.codriverlabs.microvm.operator.core.model.MicroVMSpec;
 import ai.codriverlabs.microvm.operator.core.model.MicroVMStatus;
 import org.junit.jupiter.api.Test;
@@ -32,27 +32,27 @@ class OutputFormatterTest {
     @Test
     void singleResourceFormatsCorrectly() {
         MicroVMSpec spec = new MicroVMSpec();
-        spec.setRuntime(Runtime.JAVA21);
-        spec.setMemoryMB(512);
-        spec.setVcpus(2);
+        spec.setImageRef("ci-runner");
+        spec.setMaximumDurationSeconds(512);
+        spec.setMaxIdleDurationSeconds(2);
 
         MicroVMStatus status = new MicroVMStatus();
         status.setState(MicroVMState.RUNNING);
-        status.setVmId("vm-abc123");
+        status.setMicroVmId("vm-abc123");
 
         String output = formatter.formatMicroVMRow("my-vm", spec, status, "5m");
         assertTrue(output.contains("my-vm"));
         assertTrue(output.contains("Running"));
         assertTrue(output.contains("vm-abc123"));
-        assertTrue(output.contains("java21"));
+        assertTrue(output.contains("ci-runner"));
         assertTrue(output.contains("512"));
     }
 
     @Test
     void nullStatusFieldsHandledGracefully() {
         MicroVMSpec spec = new MicroVMSpec();
-        spec.setRuntime(Runtime.NODEJS20);
-        spec.setMemoryMB(256);
+        spec.setImageRef("ci-runner");
+        spec.setMaximumDurationSeconds(256);
 
         MicroVMStatus status = new MicroVMStatus();
         status.setState(MicroVMState.PENDING);
@@ -61,7 +61,7 @@ class OutputFormatterTest {
         String output = formatter.formatMicroVMRow("pending-vm", spec, status, "10s");
         assertTrue(output.contains("pending-vm"));
         assertTrue(output.contains("Pending"));
-        assertTrue(output.contains("nodejs20"));
+        assertTrue(output.contains("ci-runner"));
         // Should not throw on null vmId
         assertFalse(output.contains("null"));
     }

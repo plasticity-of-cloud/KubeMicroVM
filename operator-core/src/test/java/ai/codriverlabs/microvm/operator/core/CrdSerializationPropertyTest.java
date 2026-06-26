@@ -66,20 +66,20 @@ class CrdSerializationPropertyTest {
     @Provide
     Arbitrary<MicroVMSpec> validMicroVMSpec() {
         return Combinators.combine(
-            Arbitraries.of(ai.codriverlabs.microvm.operator.core.enums.Runtime.values()),
+            Arbitraries.of("python-sandbox", "ci-runner", "custom-image"),
             Arbitraries.integers().between(128, 10240).filter(i -> i % 64 == 0),
             Arbitraries.integers().between(1, 6),
             Arbitraries.integers().between(1, 900).injectNull(0.3),
             Arbitraries.strings().alpha().ofMinLength(1).ofMaxLength(20).injectNull(0.5),
             Arbitraries.strings().alpha().ofMinLength(1).ofMaxLength(20).injectNull(0.5),
-            Arbitraries.of(DesiredState.values()).injectNull(0.3),
+            Arbitraries.of(ai.codriverlabs.microvm.operator.core.enums.DesiredState.values()).injectNull(0.3),
             validTagMap()
-        ).as((runtime, mem, vcpus, timeout, netRef, tmplRef, desired, tags) -> {
+        ).as((imageRef, mem, vcpus, timeout, netRef, tmplRef, desired, tags) -> {
             MicroVMSpec spec = new MicroVMSpec();
-            spec.setRuntime(runtime);
-            spec.setMemoryMB(mem);
-            spec.setVcpus(vcpus);
-            spec.setTimeoutSeconds(timeout);
+            spec.setImageRef(imageRef);
+            spec.setMaximumDurationSeconds(mem);
+            spec.setMaxIdleDurationSeconds(vcpus);
+            spec.setSuspendedDurationSeconds(timeout);
             spec.setNetworkRef(netRef);
             spec.setTemplateRef(tmplRef);
             spec.setDesiredState(desired);
@@ -98,8 +98,8 @@ class CrdSerializationPropertyTest {
         ).as((state, vmId, ip, gen) -> {
             MicroVMStatus status = new MicroVMStatus();
             status.setState(state);
-            status.setVmId(vmId);
-            status.setIpAddress(ip);
+            status.setMicroVmId(vmId);
+            status.setEndpointUrl(ip);
             status.setObservedGeneration(gen);
             return status;
         });
@@ -123,20 +123,20 @@ class CrdSerializationPropertyTest {
     @Provide
     Arbitrary<MicroVMTemplateSpec> validMicroVMTemplateSpec() {
         return Combinators.combine(
-            Arbitraries.of(ai.codriverlabs.microvm.operator.core.enums.Runtime.values()),
+            Arbitraries.of("python-sandbox", "ci-runner", "custom-image"),
             Arbitraries.integers().between(128, 10240).filter(i -> i % 64 == 0),
             Arbitraries.integers().between(1, 6),
             Arbitraries.integers().between(1, 900).injectNull(0.3),
             validStringMap(),
             validStringMap()
-        ).as((runtime, mem, vcpus, timeout, env, labels) -> {
+        ).as((imageRef, mem, vcpus, timeout, env, labels) -> {
             MicroVMTemplateSpec spec = new MicroVMTemplateSpec();
-            spec.setRuntime(runtime);
-            spec.setMemoryMB(mem);
-            spec.setVcpus(vcpus);
-            spec.setTimeoutSeconds(timeout);
-            spec.setEnvironment(env);
-            spec.setLabels(labels);
+            spec.setImageRef(imageRef);
+            spec.setMaximumDurationSeconds(mem);
+            spec.setMaxIdleDurationSeconds(vcpus);
+            spec.setSuspendedDurationSeconds(timeout);
+            spec.setTags(env);
+            // labels removed;
             return spec;
         });
     }

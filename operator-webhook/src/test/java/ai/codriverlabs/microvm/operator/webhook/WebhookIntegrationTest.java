@@ -1,6 +1,6 @@
 package ai.codriverlabs.microvm.operator.webhook;
 
-import ai.codriverlabs.microvm.operator.core.enums.Runtime;
+
 import ai.codriverlabs.microvm.operator.core.model.MicroVMSpec;
 import ai.codriverlabs.microvm.operator.webhook.mutation.MicroVMMutatingWebhook;
 import ai.codriverlabs.microvm.operator.webhook.validation.MicroVMValidatingWebhook;
@@ -31,14 +31,15 @@ class WebhookIntegrationTest {
     @DisplayName("Full pipeline: mutation applies defaults then validation passes")
     void fullPipelineMutationThenValidation() {
         MicroVMSpec spec = new MicroVMSpec();
-        spec.setRuntime(Runtime.JAVA21);
-        spec.setVcpus(2);
-        // memoryMB and timeoutSeconds are null - should get defaults
+        spec.setImageRef("python-sandbox");
+        spec.setMaximumDurationSeconds(512);
+        spec.setMaxIdleDurationSeconds(2);
+        // autoResumeEnabled is null - should get default
 
         // Step 1: Mutate
         MicroVMSpec mutated = mutator.applyDefaults(spec);
-        assertEquals(512, mutated.getMemoryMB());
-        assertEquals(300, mutated.getTimeoutSeconds());
+        assertEquals(512, mutated.getMaximumDurationSeconds()); // explicit, not overridden
+        assertTrue(mutated.getAutoResumeEnabled()); // defaulted
 
         // Step 2: Validate
         List<String> errors = validator.validate(mutated, "default");
@@ -49,9 +50,9 @@ class WebhookIntegrationTest {
     @DisplayName("Invalid memoryMB rejected: below minimum")
     void invalidMemoryBelowMinimumRejected() {
         MicroVMSpec spec = new MicroVMSpec();
-        spec.setRuntime(Runtime.JAVA21);
-        spec.setMemoryMB(64); // below 128 minimum
-        spec.setVcpus(2);
+        spec.setImageRef("python-sandbox");
+        spec.setMaximumDurationSeconds(64); // below 128 minimum
+        spec.setMaxIdleDurationSeconds(2);
 
         List<String> errors = validator.validate(spec, "default");
         assertFalse(errors.isEmpty());
@@ -62,9 +63,9 @@ class WebhookIntegrationTest {
     @DisplayName("Invalid memoryMB rejected: not multiple of 64")
     void invalidMemoryNotMultipleOf64Rejected() {
         MicroVMSpec spec = new MicroVMSpec();
-        spec.setRuntime(Runtime.JAVA21);
-        spec.setMemoryMB(500); // not multiple of 64
-        spec.setVcpus(2);
+        spec.setImageRef("python-sandbox");
+        spec.setMaximumDurationSeconds(500); // not multiple of 64
+        spec.setMaxIdleDurationSeconds(2);
 
         List<String> errors = validator.validate(spec, "default");
         assertFalse(errors.isEmpty());
@@ -75,9 +76,9 @@ class WebhookIntegrationTest {
     @DisplayName("Invalid vcpus rejected: above maximum")
     void invalidVcpusAboveMaxRejected() {
         MicroVMSpec spec = new MicroVMSpec();
-        spec.setRuntime(Runtime.JAVA21);
-        spec.setMemoryMB(512);
-        spec.setVcpus(8); // above 6 maximum
+        spec.setImageRef("python-sandbox");
+        spec.setMaximumDurationSeconds(512);
+        spec.setMaxIdleDurationSeconds(8); // above 6 maximum
 
         List<String> errors = validator.validate(spec, "default");
         assertFalse(errors.isEmpty());
@@ -88,9 +89,9 @@ class WebhookIntegrationTest {
     @DisplayName("Invalid runtime rejected: null")
     void invalidRuntimeNullRejected() {
         MicroVMSpec spec = new MicroVMSpec();
-        spec.setRuntime(null);
-        spec.setMemoryMB(512);
-        spec.setVcpus(2);
+        spec.setImageRef(null);
+        spec.setMaximumDurationSeconds(512);
+        spec.setMaxIdleDurationSeconds(2);
 
         List<String> errors = validator.validate(spec, "default");
         assertFalse(errors.isEmpty());
@@ -101,18 +102,18 @@ class WebhookIntegrationTest {
     @DisplayName("Mutation does not override explicitly set values")
     void mutationPreservesExplicitValues() {
         MicroVMSpec spec = new MicroVMSpec();
-        spec.setRuntime(Runtime.PYTHON3_12);
-        spec.setMemoryMB(1024);
-        spec.setVcpus(4);
-        spec.setTimeoutSeconds(600);
+        spec.setImageRef("python-sandbox");
+        spec.setMaximumDurationSeconds(1024);
+        spec.setMaxIdleDurationSeconds(4);
+        spec.setSuspendedDurationSeconds(600);
         spec.setNetworkRef("custom-network");
 
         MicroVMSpec mutated = mutator.applyDefaults(spec);
 
-        assertEquals(Runtime.PYTHON3_12, mutated.getRuntime());
-        assertEquals(1024, mutated.getMemoryMB());
-        assertEquals(4, mutated.getVcpus());
-        assertEquals(600, mutated.getTimeoutSeconds());
+        assertEquals("python-sandbox", mutated.getImageRef());
+        assertEquals(1024, mutated.getMaximumDurationSeconds());
+        assertEquals(4, mutated.getMaxIdleDurationSeconds());
+        assertEquals(600, mutated.getSuspendedDurationSeconds());
         assertEquals("custom-network", mutated.getNetworkRef());
     }
 
@@ -120,10 +121,10 @@ class WebhookIntegrationTest {
     @DisplayName("Multiple validation errors aggregated in single response")
     void multipleValidationErrorsAggregated() {
         MicroVMSpec spec = new MicroVMSpec();
-        spec.setRuntime(null);       // invalid
-        spec.setMemoryMB(50);        // invalid (below minimum)
-        spec.setVcpus(10);           // invalid (above maximum)
-        spec.setTimeoutSeconds(0);   // invalid (below minimum)
+        spec.setImageRef(null);       // invalid
+        spec.setMaximumDurationSeconds(50);        // invalid (below minimum)
+        spec.setMaxIdleDurationSeconds(10);           // invalid (above maximum)
+        spec.setSuspendedDurationSeconds(0);   // invalid (below minimum)
 
         List<String> errors = validator.validate(spec, "default");
         assertTrue(errors.size() >= 3, "Should have at least 3 errors, got " + errors.size() + ": " + errors);
@@ -134,18 +135,18 @@ class WebhookIntegrationTest {
     void boundaryValuesPass() {
         // Minimum valid values
         MicroVMSpec minSpec = new MicroVMSpec();
-        minSpec.setRuntime(Runtime.CUSTOM);
-        minSpec.setMemoryMB(128);
-        minSpec.setVcpus(1);
-        minSpec.setTimeoutSeconds(1);
+        minSpec.setImageRef("python-sandbox");
+        minSpec.setMaximumDurationSeconds(128);
+        minSpec.setMaxIdleDurationSeconds(1);
+        minSpec.setSuspendedDurationSeconds(1);
         assertTrue(validator.validate(minSpec, "default").isEmpty());
 
         // Maximum valid values
         MicroVMSpec maxSpec = new MicroVMSpec();
-        maxSpec.setRuntime(Runtime.NODEJS20);
-        maxSpec.setMemoryMB(10240);
-        maxSpec.setVcpus(6);
-        maxSpec.setTimeoutSeconds(900);
+        maxSpec.setImageRef("ci-runner");
+        maxSpec.setMaximumDurationSeconds(10240);
+        maxSpec.setMaxIdleDurationSeconds(6);
+        maxSpec.setSuspendedDurationSeconds(900);
         assertTrue(validator.validate(maxSpec, "default").isEmpty());
     }
 }

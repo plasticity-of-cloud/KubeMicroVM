@@ -2,7 +2,6 @@ package ai.codriverlabs.microvm.operator.controller;
 
 import ai.codriverlabs.microvm.operator.core.enums.DesiredState;
 import ai.codriverlabs.microvm.operator.core.enums.MicroVMState;
-import ai.codriverlabs.microvm.operator.core.state.MicroVMStateMachine;
 import ai.codriverlabs.microvm.operator.controller.reconciler.DriftDetector;
 import ai.codriverlabs.microvm.operator.controller.reconciler.DriftDetector.DriftAction;
 import ai.codriverlabs.microvm.operator.controller.reconciler.DriftDetector.DriftResult;
@@ -17,7 +16,7 @@ class DriftDetectorTest {
 
     @BeforeEach
     void setUp() {
-        detector = new DriftDetector(new MicroVMStateMachine());
+        detector = new DriftDetector();
     }
 
     @Test
@@ -39,105 +38,75 @@ class DriftDetectorTest {
     }
 
     @Test
-    void stoppedWithDesiredStoppedReturnsNoOp() {
-        DriftResult result = detector.detectDrift(DesiredState.STOPPED, MicroVMState.STOPPED);
+    void suspendedWithDesiredSuspendedReturnsNoOp() {
+        DriftResult result = detector.detectDrift(DesiredState.SUSPENDED, MicroVMState.SUSPENDED);
         assertInstanceOf(DriftResult.NoOp.class, result);
     }
 
     @Test
-    void pausedWithDesiredPausedReturnsNoOp() {
-        DriftResult result = detector.detectDrift(DesiredState.PAUSED, MicroVMState.PAUSED);
-        assertInstanceOf(DriftResult.NoOp.class, result);
-    }
-
-    @Test
-    void runningWithDesiredPausedReturnsPauseAction() {
-        DriftResult result = detector.detectDrift(DesiredState.PAUSED, MicroVMState.RUNNING);
+    void runningWithDesiredSuspendedReturnsSuspendAction() {
+        DriftResult result = detector.detectDrift(DesiredState.SUSPENDED, MicroVMState.RUNNING);
         assertInstanceOf(DriftResult.ActionRequired.class, result);
         DriftResult.ActionRequired action = (DriftResult.ActionRequired) result;
-        assertEquals(DriftAction.PAUSE, action.action());
+        assertEquals(DriftAction.SUSPEND, action.action());
     }
 
     @Test
-    void runningWithDesiredStoppedReturnsStopAction() {
-        DriftResult result = detector.detectDrift(DesiredState.STOPPED, MicroVMState.RUNNING);
-        assertInstanceOf(DriftResult.ActionRequired.class, result);
-        DriftResult.ActionRequired action = (DriftResult.ActionRequired) result;
-        assertEquals(DriftAction.STOP, action.action());
-    }
-
-    @Test
-    void stoppedWithDesiredRunningReturnsStartAction() {
-        DriftResult result = detector.detectDrift(DesiredState.RUNNING, MicroVMState.STOPPED);
-        assertInstanceOf(DriftResult.ActionRequired.class, result);
-        DriftResult.ActionRequired action = (DriftResult.ActionRequired) result;
-        assertEquals(DriftAction.START, action.action());
-    }
-
-    @Test
-    void pausedWithDesiredRunningReturnsResumeAction() {
-        DriftResult result = detector.detectDrift(DesiredState.RUNNING, MicroVMState.PAUSED);
+    void suspendedWithDesiredRunningReturnsResumeAction() {
+        DriftResult result = detector.detectDrift(DesiredState.RUNNING, MicroVMState.SUSPENDED);
         assertInstanceOf(DriftResult.ActionRequired.class, result);
         DriftResult.ActionRequired action = (DriftResult.ActionRequired) result;
         assertEquals(DriftAction.RESUME, action.action());
     }
 
     @Test
-    void pendingWithDesiredRunningReturnsCreateAction() {
-        DriftResult result = detector.detectDrift(DesiredState.RUNNING, MicroVMState.PENDING);
-        assertInstanceOf(DriftResult.ActionRequired.class, result);
-        DriftResult.ActionRequired action = (DriftResult.ActionRequired) result;
-        assertEquals(DriftAction.CREATE, action.action());
-    }
-
-    @Test
-    void failedWithDesiredRunningReturnsCreateAction() {
+    void failedWithDesiredRunningReturnsRecreateAction() {
         DriftResult result = detector.detectDrift(DesiredState.RUNNING, MicroVMState.FAILED);
         assertInstanceOf(DriftResult.ActionRequired.class, result);
         DriftResult.ActionRequired action = (DriftResult.ActionRequired) result;
-        assertEquals(DriftAction.CREATE, action.action());
+        assertEquals(DriftAction.RECREATE, action.action());
     }
 
     @Test
-    void creatingWithDesiredRunningReturnsNoOp() {
-        // CREATING is transitioning toward RUNNING, so no action needed
-        DriftResult result = detector.detectDrift(DesiredState.RUNNING, MicroVMState.CREATING);
+    void terminatedWithDesiredRunningReturnsRecreateAction() {
+        DriftResult result = detector.detectDrift(DesiredState.RUNNING, MicroVMState.TERMINATED);
+        assertInstanceOf(DriftResult.ActionRequired.class, result);
+        DriftResult.ActionRequired action = (DriftResult.ActionRequired) result;
+        assertEquals(DriftAction.RECREATE, action.action());
+    }
+
+    @Test
+    void pendingWithDesiredRunningReturnsNoOp() {
+        // PENDING is transitioning toward RUNNING, so no action needed
+        DriftResult result = detector.detectDrift(DesiredState.RUNNING, MicroVMState.PENDING);
         assertInstanceOf(DriftResult.NoOp.class, result);
     }
 
     @Test
-    void startingWithDesiredRunningReturnsNoOp() {
-        // STARTING is transitioning toward RUNNING
-        DriftResult result = detector.detectDrift(DesiredState.RUNNING, MicroVMState.STARTING);
+    void suspendingWithDesiredSuspendedReturnsNoOp() {
+        // SUSPENDING is transitioning toward SUSPENDED
+        DriftResult result = detector.detectDrift(DesiredState.SUSPENDED, MicroVMState.SUSPENDING);
         assertInstanceOf(DriftResult.NoOp.class, result);
     }
 
     @Test
-    void resumingWithDesiredRunningReturnsNoOp() {
-        // RESUMING is transitioning toward RUNNING
-        DriftResult result = detector.detectDrift(DesiredState.RUNNING, MicroVMState.RESUMING);
-        assertInstanceOf(DriftResult.NoOp.class, result);
-    }
-
-    @Test
-    void stoppingWithDesiredStoppedReturnsNoOp() {
-        // STOPPING is transitioning toward STOPPED
-        DriftResult result = detector.detectDrift(DesiredState.STOPPED, MicroVMState.STOPPING);
-        assertInstanceOf(DriftResult.NoOp.class, result);
-    }
-
-    @Test
-    void terminatingStateReturnsErrorOrNoOp() {
+    void terminatingWithDesiredRunningReturnsError() {
         // TERMINATING has no path to RUNNING - should return error
         DriftResult result = detector.detectDrift(DesiredState.RUNNING, MicroVMState.TERMINATING);
-        // Terminating has no resolve target for RUNNING, so it should be an error
         assertInstanceOf(DriftResult.Error.class, result);
     }
 
     @Test
-    void terminatedStateReturnsError() {
-        // TERMINATED cannot transition anywhere
-        DriftResult result = detector.detectDrift(DesiredState.RUNNING, MicroVMState.TERMINATED);
-        assertInstanceOf(DriftResult.Error.class, result);
+    void runningWithDesiredTerminatedReturnsTerminateAction() {
+        DriftResult result = detector.detectDrift(DesiredState.TERMINATED, MicroVMState.RUNNING);
+        assertInstanceOf(DriftResult.ActionRequired.class, result);
+        DriftResult.ActionRequired action = (DriftResult.ActionRequired) result;
+        assertEquals(DriftAction.TERMINATE, action.action());
+    }
+
+    @Test
+    void terminatedWithDesiredTerminatedReturnsNoOp() {
+        DriftResult result = detector.detectDrift(DesiredState.TERMINATED, MicroVMState.TERMINATED);
+        assertInstanceOf(DriftResult.NoOp.class, result);
     }
 }

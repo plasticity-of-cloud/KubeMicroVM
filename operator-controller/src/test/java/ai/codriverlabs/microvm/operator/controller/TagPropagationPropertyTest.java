@@ -1,9 +1,8 @@
 package ai.codriverlabs.microvm.operator.controller;
 
-import ai.codriverlabs.microvm.operator.controller.aws.CreateMicroVMRequest;
+import ai.codriverlabs.microvm.operator.controller.aws.RunMicroVMRequest;
 import net.jqwik.api.*;
 
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -14,14 +13,13 @@ class TagPropagationPropertyTest {
 
     @Property(tries = 100)
     void allSpecTagsPropagatedToAwsRequest(@ForAll("tagMaps") Map<String, String> specTags) {
-        // Simulate building a CreateMicroVMRequest from spec tags
-        CreateMicroVMRequest request = new CreateMicroVMRequest(
-            "java21", 512, 2, 300,
-            "vpc-abc123", List.of("subnet-123"), List.of("sg-456"),
+        RunMicroVMRequest request = new RunMicroVMRequest(
+            "python-sandbox", "1.0", "arn:aws:iam::123456789012:role/exec",
+            null, null, null,
+            300, 600, true, 900,
             specTags, "us-east-1"
         );
 
-        // Verify all spec tags are present in the request without modification
         if (specTags != null) {
             for (Map.Entry<String, String> entry : specTags.entrySet()) {
                 assert request.tags().containsKey(entry.getKey()) :
@@ -30,7 +28,6 @@ class TagPropagationPropertyTest {
                     "Tag value for key '" + entry.getKey() + "' was modified. Expected: " +
                     entry.getValue() + ", Got: " + request.tags().get(entry.getKey());
             }
-            // No extra tags added
             assert request.tags().size() == specTags.size() :
                 "Request has " + request.tags().size() + " tags but spec had " + specTags.size();
         }

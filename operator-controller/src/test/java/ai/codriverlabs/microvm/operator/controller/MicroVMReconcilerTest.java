@@ -5,7 +5,7 @@ import ai.codriverlabs.microvm.operator.controller.reconciler.DriftDetector;
 import ai.codriverlabs.microvm.operator.controller.reconciler.MicroVMReconciler;
 import ai.codriverlabs.microvm.operator.core.enums.DesiredState;
 import ai.codriverlabs.microvm.operator.core.enums.MicroVMState;
-import ai.codriverlabs.microvm.operator.core.enums.Runtime;
+
 import ai.codriverlabs.microvm.operator.core.model.*;
 import ai.codriverlabs.microvm.operator.core.state.MicroVMStateMachine;
 import io.fabric8.kubernetes.api.model.ObjectMeta;
@@ -40,10 +40,8 @@ class MicroVMReconcilerTest {
     void newResourceStartsInPending() {
         MicroVM microVM = createMicroVM("test-vm", null);
 
-        // New resources without status should start in Pending
         assertNull(microVM.getStatus());
 
-        // After first reconcile, status should be initialized
         MicroVMStatus status = new MicroVMStatus();
         status.setState(MicroVMState.PENDING);
         status.setLastTransitionTime(Instant.now());
@@ -53,70 +51,57 @@ class MicroVMReconcilerTest {
     }
 
     @Test
-    @DisplayName("Pending -> Creating -> Running on AWS create success")
+    @DisplayName("Pending -> Running on AWS runMicroVM success")
     void pendingToRunningOnAwsSuccess() {
-        // Setup: MicroVM in Pending state
         MicroVM microVM = createMicroVM("test-vm", MicroVMState.PENDING);
 
-        // Mock AWS create returning success
-        when(mockClient.createMicroVM(any())).thenReturn(
+        when(mockClient.runMicroVM(any())).thenReturn(
             CompletableFuture.completedFuture(
-                new CreateMicroVMResponse("vm-12345", "10.0.1.5", "req-abc")
+                new RunMicroVMResponse("vm-12345", "10.0.1.5", "RUNNING")
             )
         );
 
-        // Verify state machine allows Pending -> Creating
-        var transition = stateMachine.transition(MicroVMState.PENDING, MicroVMState.CREATING);
+        var transition = stateMachine.transition(MicroVMState.PENDING, MicroVMState.RUNNING);
         assertInstanceOf(ai.codriverlabs.microvm.operator.core.state.StateTransitionResult.Valid.class, transition);
 
-        // Verify Creating -> Running
-        transition = stateMachine.transition(MicroVMState.CREATING, MicroVMState.RUNNING);
-        assertInstanceOf(ai.codriverlabs.microvm.operator.core.state.StateTransitionResult.Valid.class, transition);
-
-        // After success, status should be updated
         microVM.getStatus().setState(MicroVMState.RUNNING);
-        microVM.getStatus().setVmId("vm-12345");
-        microVM.getStatus().setIpAddress("10.0.1.5");
+        microVM.getStatus().setMicroVmId("vm-12345");
+        microVM.getStatus().setEndpointUrl("10.0.1.5");
 
         assertEquals(MicroVMState.RUNNING, microVM.getStatus().getState());
-        assertEquals("vm-12345", microVM.getStatus().getVmId());
-        assertEquals("10.0.1.5", microVM.getStatus().getIpAddress());
+        assertEquals("vm-12345", microVM.getStatus().getMicroVmId());
+        assertEquals("10.0.1.5", microVM.getStatus().getEndpointUrl());
     }
 
     @Test
     @DisplayName("AWS throttling keeps state unchanged for retry")
     void awsThrottlingKeepsStateForRetry() {
-        MicroVM microVM = createMicroVM("test-vm", MicroVMState.CREATING);
+        MicroVM microVM = createMicroVM("test-vm", MicroVMState.PENDING);
 
-        // Mock AWS returning retryable error
-        when(mockClient.createMicroVM(any())).thenReturn(
+        when(mockClient.runMicroVM(any())).thenReturn(
             CompletableFuture.failedFuture(
                 new AwsApiException("Rate exceeded", AwsApiException.ErrorType.RETRYABLE, "req-xyz", 429)
             )
         );
 
-        // join() wraps the exception in CompletionException
         CompletionException ce = assertThrows(CompletionException.class, () -> {
-            mockClient.createMicroVM(null).join();
+            mockClient.runMicroVM(null).join();
         });
         assertInstanceOf(AwsApiException.class, ce.getCause());
         AwsApiException ex = (AwsApiException) ce.getCause();
         assertTrue(ex.isRetryable());
 
-        // State should NOT change on retryable error
-        assertEquals(MicroVMState.CREATING, microVM.getStatus().getState());
+        assertEquals(MicroVMState.PENDING, microVM.getStatus().getState());
     }
 
     @Test
     @DisplayName("Non-retryable error transitions to Failed")
     void nonRetryableErrorTransitionsToFailed() {
-        MicroVM microVM = createMicroVM("test-vm", MicroVMState.CREATING);
+        MicroVM microVM = createMicroVM("test-vm", MicroVMState.PENDING);
 
-        // Verify state machine allows Creating -> Failed
-        var transition = stateMachine.transition(MicroVMState.CREATING, MicroVMState.FAILED);
+        var transition = stateMachine.transition(MicroVMState.PENDING, MicroVMState.FAILED);
         assertInstanceOf(ai.codriverlabs.microvm.operator.core.state.StateTransitionResult.Valid.class, transition);
 
-        // After non-retryable error, state should be Failed
         microVM.getStatus().setState(MicroVMState.FAILED);
         assertEquals(MicroVMState.FAILED, microVM.getStatus().getState());
     }
@@ -125,14 +110,12 @@ class MicroVMReconcilerTest {
     @DisplayName("Deletion triggers Terminating -> Terminated")
     void deletionTriggersTermination() {
         MicroVM microVM = createMicroVM("test-vm", MicroVMState.RUNNING);
-        microVM.getStatus().setVmId("vm-12345");
+        microVM.getStatus().setMicroVmId("vm-12345");
 
-        // Mock AWS destroy success
-        when(mockClient.destroyMicroVM("vm-12345")).thenReturn(
+        when(mockClient.terminateMicroVM("vm-12345")).thenReturn(
             CompletableFuture.completedFuture(null)
         );
 
-        // Verify Running -> Terminating -> Terminated
         var t1 = stateMachine.transition(MicroVMState.RUNNING, MicroVMState.TERMINATING);
         assertInstanceOf(ai.codriverlabs.microvm.operator.core.state.StateTransitionResult.Valid.class, t1);
 
@@ -144,56 +127,50 @@ class MicroVMReconcilerTest {
     }
 
     @Test
-    @DisplayName("ResourceNotFoundException triggers recreate back to Creating")
+    @DisplayName("ResourceNotFoundException triggers recreate back to Pending")
     void notFoundTriggersRecreate() {
         MicroVM microVM = createMicroVM("test-vm", MicroVMState.RUNNING);
 
-        // When describe returns NOT_FOUND, transition to Creating (recreate)
-        when(mockClient.describeMicroVM(any())).thenReturn(
+        when(mockClient.getMicroVM(any())).thenReturn(
             CompletableFuture.failedFuture(
                 new AwsApiException("Resource not found", AwsApiException.ErrorType.NOT_FOUND, "req-404", 404)
             )
         );
 
-        // For a Running VM that was lost, go to Failed first, then recreate
-        var t1 = stateMachine.transition(MicroVMState.FAILED, MicroVMState.CREATING);
+        var t1 = stateMachine.transition(MicroVMState.FAILED, MicroVMState.PENDING);
         assertInstanceOf(ai.codriverlabs.microvm.operator.core.state.StateTransitionResult.Valid.class, t1);
     }
 
     @Test
     @DisplayName("Drift detection triggers correct AWS API call")
     void driftDetectionTriggersCorrectAction() {
-        DriftDetector detector = new DriftDetector(stateMachine);
+        DriftDetector detector = new DriftDetector();
         MicroVM microVM = createMicroVM("test-vm", MicroVMState.RUNNING);
-        microVM.getSpec().setDesiredState(DesiredState.PAUSED);
+        microVM.getSpec().setDesiredState(DesiredState.SUSPENDED);
 
-        // Drift: desired=PAUSED, actual=RUNNING -> should pause
-        var result = detector.detectDrift(DesiredState.PAUSED, MicroVMState.RUNNING);
+        var result = detector.detectDrift(DesiredState.SUSPENDED, MicroVMState.RUNNING);
         assertInstanceOf(DriftDetector.DriftResult.ActionRequired.class, result);
 
         var action = (DriftDetector.DriftResult.ActionRequired) result;
-        assertEquals(MicroVMState.PAUSED, action.targetState());
+        assertEquals(MicroVMState.SUSPENDING, action.targetState());
     }
 
     @Test
     @DisplayName("Credential failure halts reconciliation")
     void credentialFailureHaltsReconciliation() {
-        when(mockClient.describeMicroVM(any())).thenReturn(
+        when(mockClient.getMicroVM(any())).thenReturn(
             CompletableFuture.failedFuture(
                 new AwsApiException("Credentials expired", AwsApiException.ErrorType.AUTH_FAILURE, "req-auth", 403)
             )
         );
 
-        // join() wraps the exception in CompletionException
         CompletionException ce = assertThrows(CompletionException.class, () -> {
-            mockClient.describeMicroVM("vm-123").join();
+            mockClient.getMicroVM("vm-123").join();
         });
         assertInstanceOf(AwsApiException.class, ce.getCause());
         AwsApiException ex = (AwsApiException) ce.getCause();
         assertTrue(ex.isAuthFailure());
     }
-
-    // Helper methods
 
     private MicroVM createMicroVM(String name, MicroVMState state) {
         MicroVM vm = new MicroVM();
@@ -204,10 +181,10 @@ class MicroVMReconcilerTest {
         vm.setMetadata(meta);
 
         MicroVMSpec spec = new MicroVMSpec();
-        spec.setRuntime(Runtime.JAVA21);
-        spec.setMemoryMB(512);
-        spec.setVcpus(2);
-        spec.setTimeoutSeconds(300);
+        spec.setImageRef("python-sandbox");
+        spec.setMaximumDurationSeconds(512);
+        spec.setMaxIdleDurationSeconds(2);
+        spec.setSuspendedDurationSeconds(300);
         vm.setSpec(spec);
 
         if (state != null) {

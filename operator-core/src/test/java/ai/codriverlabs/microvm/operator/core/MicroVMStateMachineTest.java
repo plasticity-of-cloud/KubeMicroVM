@@ -16,18 +16,20 @@ class MicroVMStateMachineTest {
     private final MicroVMStateMachine sm = new MicroVMStateMachine();
 
     @Test
-    void pendingCanOnlyTransitionToCreating() {
-        var result = sm.transition(PENDING, CREATING);
+    void pendingCanTransitionToRunningOrFailed() {
+        var result = sm.transition(PENDING, RUNNING);
         assertInstanceOf(StateTransitionResult.Valid.class, result);
 
-        var invalid = sm.transition(PENDING, RUNNING);
+        var result2 = sm.transition(PENDING, FAILED);
+        assertInstanceOf(StateTransitionResult.Valid.class, result2);
+
+        var invalid = sm.transition(PENDING, TERMINATED);
         assertInstanceOf(StateTransitionResult.Invalid.class, invalid);
     }
 
     @Test
-    void runningCanTransitionToPausedStoppingTerminating() {
-        assertInstanceOf(StateTransitionResult.Valid.class, sm.transition(RUNNING, PAUSED));
-        assertInstanceOf(StateTransitionResult.Valid.class, sm.transition(RUNNING, STOPPING));
+    void runningCanTransitionToSuspendingOrTerminating() {
+        assertInstanceOf(StateTransitionResult.Valid.class, sm.transition(RUNNING, SUSPENDING));
         assertInstanceOf(StateTransitionResult.Valid.class, sm.transition(RUNNING, TERMINATING));
     }
 
@@ -39,7 +41,7 @@ class MicroVMStateMachineTest {
 
     @Test
     void failedCanRetryOrTerminate() {
-        assertInstanceOf(StateTransitionResult.Valid.class, sm.transition(FAILED, CREATING));
+        assertInstanceOf(StateTransitionResult.Valid.class, sm.transition(FAILED, PENDING));
         assertInstanceOf(StateTransitionResult.Valid.class, sm.transition(FAILED, TERMINATING));
     }
 
@@ -51,11 +53,11 @@ class MicroVMStateMachineTest {
 
     @Test
     void invalidTransitionContainsDescriptiveReason() {
-        var result = sm.transition(PENDING, RUNNING);
+        var result = sm.transition(PENDING, TERMINATED);
         assertInstanceOf(StateTransitionResult.Invalid.class, result);
         var invalid = (StateTransitionResult.Invalid) result;
         assertTrue(invalid.reason().contains("Pending"), "Reason should mention source state");
-        assertTrue(invalid.reason().contains("Running"), "Reason should mention target state");
+        assertTrue(invalid.reason().contains("Terminated"), "Reason should mention target state");
     }
 
     @ParameterizedTest

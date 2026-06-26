@@ -2,7 +2,6 @@ package ai.codriverlabs.microvm.operator.controller;
 
 import ai.codriverlabs.microvm.operator.core.enums.DesiredState;
 import ai.codriverlabs.microvm.operator.core.enums.MicroVMState;
-import ai.codriverlabs.microvm.operator.core.state.MicroVMStateMachine;
 import ai.codriverlabs.microvm.operator.controller.reconciler.DriftDetector;
 import ai.codriverlabs.microvm.operator.controller.reconciler.DriftDetector.DriftResult;
 import net.jqwik.api.*;
@@ -15,7 +14,7 @@ import static ai.codriverlabs.microvm.operator.core.enums.MicroVMState.*;
  */
 class DriftDetectionPropertyTest {
 
-    private final DriftDetector detector = new DriftDetector(new MicroVMStateMachine());
+    private final DriftDetector detector = new DriftDetector();
 
     // When desired == actual (aligned), no action needed
     @Property(tries = 100)
@@ -62,19 +61,19 @@ class DriftDetectionPropertyTest {
     Arbitrary<DesiredActualPair> alignedPairs() {
         return Arbitraries.of(
             new DesiredActualPair(DesiredState.RUNNING, RUNNING),
-            new DesiredActualPair(DesiredState.PAUSED, PAUSED),
-            new DesiredActualPair(DesiredState.STOPPED, STOPPED)
+            new DesiredActualPair(DesiredState.SUSPENDED, SUSPENDED),
+            new DesiredActualPair(DesiredState.SUSPENDED, SUSPENDED)
         );
     }
 
     @Provide
     Arbitrary<DesiredActualPair> driftPairs() {
         return Arbitraries.of(
-            new DesiredActualPair(DesiredState.RUNNING, STOPPED),
-            new DesiredActualPair(DesiredState.RUNNING, PAUSED),
-            new DesiredActualPair(DesiredState.PAUSED, RUNNING),
-            new DesiredActualPair(DesiredState.STOPPED, RUNNING),
-            new DesiredActualPair(DesiredState.RUNNING, PENDING),
+            new DesiredActualPair(DesiredState.RUNNING, SUSPENDED),
+            new DesiredActualPair(DesiredState.RUNNING, TERMINATED),
+            new DesiredActualPair(DesiredState.SUSPENDED, RUNNING),
+            new DesiredActualPair(DesiredState.TERMINATED, RUNNING),
+            new DesiredActualPair(DesiredState.TERMINATED, SUSPENDED),
             new DesiredActualPair(DesiredState.RUNNING, FAILED)
         );
     }
@@ -82,12 +81,12 @@ class DriftDetectionPropertyTest {
     @Provide
     Arbitrary<DesiredActualPair> transitionalTowardDesiredPairs() {
         return Arbitraries.of(
-            // CREATING, STARTING, RESUMING are transitional toward RUNNING
-            new DesiredActualPair(DesiredState.RUNNING, CREATING),
-            new DesiredActualPair(DesiredState.RUNNING, STARTING),
-            new DesiredActualPair(DesiredState.RUNNING, RESUMING),
-            // STOPPING is transitional toward STOPPED
-            new DesiredActualPair(DesiredState.STOPPED, STOPPING)
+            // PENDING, RUNNING, RUNNING are transitional toward RUNNING
+            new DesiredActualPair(DesiredState.RUNNING, PENDING),
+            new DesiredActualPair(DesiredState.RUNNING, RUNNING),
+            new DesiredActualPair(DesiredState.RUNNING, RUNNING),
+            // SUSPENDING is transitional toward SUSPENDED
+            new DesiredActualPair(DesiredState.SUSPENDED, SUSPENDING)
         );
     }
 

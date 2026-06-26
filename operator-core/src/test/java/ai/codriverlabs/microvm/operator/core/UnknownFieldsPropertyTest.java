@@ -32,9 +32,9 @@ class UnknownFieldsPropertyTest {
         MicroVMSpec deserialized = mapper.readValue(augmentedJson, MicroVMSpec.class);
 
         // Known fields should be intact
-        assert deserialized.getRuntime() != null : "Runtime should be preserved";
-        assert deserialized.getMemoryMB() != null : "MemoryMB should be preserved";
-        assert deserialized.getVcpus() != null : "Vcpus should be preserved";
+        assert deserialized.getImageRef() != null : "Runtime should be preserved";
+        assert deserialized.getMaximumDurationSeconds() != null : "MemoryMB should be preserved";
+        assert deserialized.getMaxIdleDurationSeconds() != null : "Vcpus should be preserved";
 
         // Unknown field should be preserved in additionalProperties
         assert deserialized.getAdditionalProperties().containsKey(unknownKey) :
@@ -51,13 +51,13 @@ class UnknownFieldsPropertyTest {
 
     @Provide
     Arbitrary<String> validMicroVMSpecJson() {
-        return Arbitraries.of(ai.codriverlabs.microvm.operator.core.enums.Runtime.values()).map(runtime -> {
+        return Arbitraries.of("python-sandbox", "ci-runner", "custom-image").map(imageRef -> {
             try {
                 MicroVMSpec spec = new MicroVMSpec();
-                spec.setRuntime(runtime);
-                spec.setMemoryMB(512);
-                spec.setVcpus(2);
-                spec.setTimeoutSeconds(300);
+                spec.setImageRef(imageRef);
+                spec.setMaximumDurationSeconds(512);
+                spec.setMaxIdleDurationSeconds(2);
+                spec.setSuspendedDurationSeconds(300);
                 return mapper.writeValueAsString(spec);
             } catch (JsonProcessingException e) {
                 throw new RuntimeException(e);
