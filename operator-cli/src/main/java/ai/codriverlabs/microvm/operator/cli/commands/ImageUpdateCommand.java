@@ -21,6 +21,12 @@ public class ImageUpdateCommand implements Runnable {
     @Option(names = {"--s3-bucket"}, description = "S3 bucket (if changing)")
     String s3Bucket;
 
+    @Option(names = {"--wait"}, description = "Wait for build to complete and print state transitions")
+    boolean wait;
+
+    @Option(names = {"--wait-timeout"}, defaultValue = "600", description = "Wait timeout in seconds (default: 600)")
+    int waitTimeout;
+
     @Option(names = {"-n", "--namespace"}, defaultValue = "default", description = "Namespace")
     String namespace;
 
@@ -46,6 +52,11 @@ public class ImageUpdateCommand implements Runnable {
             client.resource(image).inNamespace(namespace).update();
             System.out.printf("microvm-image/%s updated (new source: s3://%s/%s) — build will start%n",
                 name, source.getS3Bucket(), s3Key);
+
+            if (wait) {
+                boolean success = new ImageWaiter(client, name, namespace, waitTimeout).waitForBuild();
+                if (!success) System.exit(1);
+            }
         } catch (KubernetesClientException e) {
             System.err.println("Error updating MicroVMImage: " + e.getMessage());
             System.exit(1);

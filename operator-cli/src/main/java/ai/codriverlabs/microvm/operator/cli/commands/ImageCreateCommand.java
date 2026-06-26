@@ -31,6 +31,12 @@ public class ImageCreateCommand implements Runnable {
     @Option(names = {"--auto-activate"}, defaultValue = "true", description = "Auto-activate on successful build (default: true)")
     boolean autoActivate;
 
+    @Option(names = {"--wait"}, description = "Wait for build to complete and print state transitions")
+    boolean wait;
+
+    @Option(names = {"--wait-timeout"}, defaultValue = "600", description = "Wait timeout in seconds (default: 600)")
+    int waitTimeout;
+
     @Option(names = {"-n", "--namespace"}, defaultValue = "default", description = "Namespace")
     String namespace;
 
@@ -58,6 +64,11 @@ public class ImageCreateCommand implements Runnable {
 
             client.resource(image).inNamespace(namespace).create();
             System.out.printf("microvm-image/%s created (source: s3://%s/%s)%n", name, s3Bucket, s3Key);
+
+            if (wait) {
+                boolean success = new ImageWaiter(client, name, namespace, waitTimeout).waitForBuild();
+                if (!success) System.exit(1);
+            }
         } catch (KubernetesClientException e) {
             System.err.println("Error creating MicroVMImage: " + e.getMessage());
             System.exit(1);
