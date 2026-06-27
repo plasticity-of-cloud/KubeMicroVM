@@ -3,9 +3,9 @@ package ai.codriverlabs.microvm.operator.controller.health;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.eclipse.microprofile.health.HealthCheck;
 import org.eclipse.microprofile.health.HealthCheckResponse;
-import org.eclipse.microprofile.health.Readiness;
+import org.eclipse.microprofile.health.Liveness;
 
-@Readiness
+@Liveness
 @ApplicationScoped
 public class AwsConnectivityHealthCheck implements HealthCheck {
 
