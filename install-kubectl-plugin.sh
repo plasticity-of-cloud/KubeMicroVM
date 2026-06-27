@@ -42,23 +42,28 @@ fi
 
 # Build
 if ! $SKIP_BUILD; then
-  NATIVE_FLAG=""
-  $NATIVE && NATIVE_FLAG="--native"
-  ./build-local.sh --only cli --skip-tests ${NATIVE_FLAG}
+  if $NATIVE; then
+    ./build-local.sh --only cli --skip-tests --native
+  else
+    ./build-local.sh --only cli --skip-tests
+  fi
 fi
 
 mkdir -p "${PREFIX}"
 
-# Locate build output
-NATIVE_BIN="operator-cli/target/operator-cli-1.0.0-SNAPSHOT-runner"
+# Locate build output — prefer native binary when requested or when it's newer than the JVM jar
+NATIVE_BIN=$(find operator-cli/target -maxdepth 1 -name "*-runner" -not -name "*.jar" 2>/dev/null | head -1)
 QUARKUS_APP_DIR="operator-cli/target/quarkus-app"
 
-if $NATIVE && [[ -f "$NATIVE_BIN" ]]; then
-  # Install native binary directly
+if $NATIVE && [[ -n "$NATIVE_BIN" && -f "$NATIVE_BIN" ]]; then
   echo "==> Installing native binary → ${INSTALL_PATH}"
   cp "${NATIVE_BIN}" "${INSTALL_PATH}"
   chmod +x "${INSTALL_PATH}"
-
+elif [[ -n "$NATIVE_BIN" && -f "$NATIVE_BIN" ]] && ! [[ -d "$QUARKUS_APP_DIR" ]]; then
+  # native bin exists and no JVM build — install native
+  echo "==> Installing native binary → ${INSTALL_PATH}"
+  cp "${NATIVE_BIN}" "${INSTALL_PATH}"
+  chmod +x "${INSTALL_PATH}"
 elif [[ -d "$QUARKUS_APP_DIR" ]]; then
   # Install JVM wrapper script that launches the Quarkus fast-jar
   APP_DIR_ABS="$(cd "${QUARKUS_APP_DIR}" && pwd)"
