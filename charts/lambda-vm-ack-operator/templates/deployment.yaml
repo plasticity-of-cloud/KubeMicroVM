@@ -32,19 +32,16 @@ spec:
             - name: http
               containerPort: 8080
               protocol: TCP
-            - name: health
-              containerPort: 8080
-              protocol: TCP
           livenessProbe:
             httpGet:
               path: /q/health/live
-              port: health
+              port: http
             initialDelaySeconds: 5
             periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /q/health/ready
-              port: health
+              port: http
             initialDelaySeconds: 10
             periodSeconds: 10
           resources:
