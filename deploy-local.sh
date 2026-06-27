@@ -7,7 +7,8 @@
 #   ./deploy-local.sh --native               # native build + deploy
 #   ./deploy-local.sh --namespace <ns>       # deploy to specific namespace (default: kube-microvm)
 #   ./deploy-local.sh --region <region>      # AWS region (default: from aws config)
-#   ./deploy-local.sh --role-arn <arn>       # IRSA role ARN (optional)
+#   ./deploy-local.sh --role-arn <arn>       # IRSA role ARN (skips Pod Identity setup)
+#   ./deploy-local.sh --skip-pod-identity    # skip Pod Identity role + association creation
 #   ./deploy-local.sh --dry-run              # helm install --dry-run
 #
 set -euo pipefail
@@ -18,21 +19,23 @@ NAMESPACE="kube-microvm"
 REGION=""
 ROLE_ARN=""
 DRY_RUN=false
+SKIP_POD_IDENTITY=false
 
 while [[ $# -gt 0 ]]; do
   case $1 in
     --help)
-      sed -n '2,9p' "$0" | sed 's/^# //'
+      sed -n '2,10p' "$0" | sed 's/^# //'
       exit 0 ;;
-    --skip-build)   SKIP_BUILD=true ;;
-    --native)       NATIVE=true ;;
-    --namespace)    NAMESPACE="$2"; shift ;;
-    --namespace=*)  NAMESPACE="${1#--namespace=}" ;;
-    --region)       REGION="$2"; shift ;;
-    --region=*)     REGION="${1#--region=}" ;;
-    --role-arn)     ROLE_ARN="$2"; shift ;;
-    --role-arn=*)   ROLE_ARN="${1#--role-arn=}" ;;
-    --dry-run)      DRY_RUN=true ;;
+    --skip-build)        SKIP_BUILD=true ;;
+    --native)            NATIVE=true ;;
+    --namespace)         NAMESPACE="$2"; shift ;;
+    --namespace=*)       NAMESPACE="${1#--namespace=}" ;;
+    --region)            REGION="$2"; shift ;;
+    --region=*)          REGION="${1#--region=}" ;;
+    --role-arn)          ROLE_ARN="$2"; shift ;;
+    --role-arn=*)        ROLE_ARN="${1#--role-arn=}" ;;
+    --skip-pod-identity) SKIP_POD_IDENTITY=true ;;
+    --dry-run)           DRY_RUN=true ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
   shift
@@ -61,7 +64,70 @@ fi
 kubectl get namespace "${NAMESPACE}" &>/dev/null \
   || kubectl create namespace "${NAMESPACE}"
 
-# 3. Helm install / upgrade
+# 3. Pod Identity role + association (unless IRSA or explicitly skipped)
+CLUSTER_NAME=$(kubectl config current-context | sed 's|.*cluster/||')
+SA_NAME="kube-microvm-operator-lambda-vm-ack-operator"
+POD_IDENTITY_ROLE_NAME="kube-microvm-operator"
+
+if [[ -z "$ROLE_ARN" ]] && ! $SKIP_POD_IDENTITY && ! $DRY_RUN; then
+  echo "--- Pod Identity"
+
+  # Create role if it doesn't exist
+  if ! aws iam get-role --role-name "${POD_IDENTITY_ROLE_NAME}" &>/dev/null; then
+    echo "    Creating IAM role ${POD_IDENTITY_ROLE_NAME}"
+    aws iam create-role \
+      --role-name "${POD_IDENTITY_ROLE_NAME}" \
+      --assume-role-policy-document '{
+        "Version":"2012-10-17",
+        "Statement":[{"Effect":"Allow","Principal":{"Service":"pods.eks.amazonaws.com"},
+          "Action":["sts:AssumeRole","sts:TagSession"]}]}' \
+      --description "KubeMicroVM operator Pod Identity role" \
+      --query 'Role.Arn' --output text
+    aws iam put-role-policy \
+      --role-name "${POD_IDENTITY_ROLE_NAME}" \
+      --policy-name KubeMicroVMOperatorPolicy \
+      --policy-document '{
+        "Version":"2012-10-17",
+        "Statement":[{"Effect":"Allow",
+          "Action":["lambda-microvms:RunMicrovm","lambda-microvms:GetMicrovm",
+            "lambda-microvms:ListMicrovms","lambda-microvms:SuspendMicrovm",
+            "lambda-microvms:ResumeMicrovm","lambda-microvms:TerminateMicrovm",
+            "lambda-microvms:CreateMicrovmImage","lambda-microvms:GetMicrovmImage",
+            "lambda-microvms:UpdateMicrovmImage","lambda-microvms:DeleteMicrovmImage",
+            "lambda-microvms:ListMicrovmImages","lambda-microvms:GetMicrovmImageVersion",
+            "lambda-microvms:ListMicrovmImageVersions","lambda-microvms:UpdateMicrovmImageVersion",
+            "lambda-microvms:ListManagedMicrovmImages","lambda-microvms:CreateMicrovmAuthToken",
+            "lambda-microvms:TagResource","lambda-microvms:UntagResource","lambda-microvms:ListTags"],
+          "Resource":"*"}]}'
+  else
+    echo "    IAM role ${POD_IDENTITY_ROLE_NAME} already exists"
+  fi
+
+  ROLE_ARN_PI=$(aws iam get-role --role-name "${POD_IDENTITY_ROLE_NAME}" --query 'Role.Arn' --output text)
+
+  # Create association if it doesn't exist
+  EXISTING=$(aws eks list-pod-identity-associations \
+    --cluster-name "${CLUSTER_NAME}" \
+    --namespace "${NAMESPACE}" \
+    --region "${REGION}" \
+    --query "associations[?serviceAccount=='${SA_NAME}'].associationId" \
+    --output text 2>/dev/null)
+
+  if [[ -z "$EXISTING" ]]; then
+    echo "    Creating Pod Identity association"
+    aws eks create-pod-identity-association \
+      --cluster-name "${CLUSTER_NAME}" \
+      --namespace "${NAMESPACE}" \
+      --service-account "${SA_NAME}" \
+      --role-arn "${ROLE_ARN_PI}" \
+      --region "${REGION}" \
+      --query 'association.associationId' --output text
+  else
+    echo "    Pod Identity association already exists: ${EXISTING}"
+  fi
+fi
+
+# 4. Helm install / upgrade
 DRY_RUN_FLAG=""
 $DRY_RUN && DRY_RUN_FLAG="--dry-run"
 
