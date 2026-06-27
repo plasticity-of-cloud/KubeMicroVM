@@ -76,7 +76,7 @@ PERMISSIONS_POLICY="{
     {
       \"Effect\": \"Allow\",
       \"Action\": [\"logs:CreateLogGroup\", \"logs:CreateLogStream\", \"logs:PutLogEvents\"],
-      \"Resource\": \"arn:aws:logs:*:*:*\"
+      \"Resource\": \"arn:aws:logs:${REGION}:${ACCOUNT}:log-group:/aws/lambda/microvms/*\"
     }
   ]
 }"
