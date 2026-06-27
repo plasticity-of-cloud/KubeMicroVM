@@ -9,8 +9,8 @@ import org.eclipse.microprofile.health.Liveness;
 @ApplicationScoped
 public class AwsConnectivityHealthCheck implements HealthCheck {
 
-    private volatile boolean awsConnectivityConfirmed = false;
-    private volatile boolean informerCachesSynced = false;
+    private static volatile boolean awsConnectivityConfirmed = false;
+    private static volatile boolean informerCachesSynced = false;
 
     @Override
     public HealthCheckResponse call() {
@@ -22,11 +22,11 @@ public class AwsConnectivityHealthCheck implements HealthCheck {
                 .build();
     }
 
-    public void setAwsConnectivityConfirmed(boolean confirmed) {
-        this.awsConnectivityConfirmed = confirmed;
+    public static void setAwsConnectivityConfirmed(boolean confirmed) {
+        awsConnectivityConfirmed = confirmed;
     }
 
-    public void setInformerCachesSynced(boolean synced) {
-        this.informerCachesSynced = synced;
+    public static void setInformerCachesSynced(boolean synced) {
+        informerCachesSynced = synced;
     }
 }
