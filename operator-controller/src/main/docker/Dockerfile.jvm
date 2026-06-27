@@ -1,0 +1,27 @@
+FROM registry.access.redhat.com/ubi9/ubi9-minimal:9.4
+
+ARG JAVA_PACKAGE=java-25-openjdk-headless
+RUN microdnf install -y ${JAVA_PACKAGE} && microdnf clean all
+
+ENV JAVA_HOME=/usr/lib/jvm/jre-25
+ENV LANG=en_US.UTF-8
+
+ARG APP_DIR=/deployments
+WORKDIR ${APP_DIR}
+
+COPY --chown=1001:root quarkus-run.jar ${APP_DIR}/quarkus-run.jar
+COPY --chown=1001:root app/ ${APP_DIR}/app/
+COPY --chown=1001:root lib/ ${APP_DIR}/lib/
+COPY --chown=1001:root quarkus/ ${APP_DIR}/quarkus/
+
+USER 1001
+
+EXPOSE 8080 8443
+
+HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8080/q/health/live || exit 1
+
+LABEL org.opencontainers.image.source="https://github.com/plasticity-of-cloud/KubeMicroVM" \
+      org.opencontainers.image.description="KubeMicroVM Operator - Kubernetes operator for AWS Lambda MicroVMs"
+
+ENTRYPOINT ["java", "-jar", "quarkus-run.jar"]
