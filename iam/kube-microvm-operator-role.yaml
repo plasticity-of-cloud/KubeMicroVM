@@ -62,8 +62,8 @@ Resources:
               Action: sts:AssumeRoleWithWebIdentity
               Condition:
                 StringEquals:
-                  !Sub '${OIDCProviderArn}:sub': !Sub 'system:serviceaccount:${Namespace}:${ServiceAccountName}'
-                  !Sub '${OIDCProviderArn}:aud': 'sts.amazonaws.com'
+                  aws:PrincipalTag/kubernetes-namespace: !Ref Namespace
+                  aws:PrincipalTag/kubernetes-service-account: !Ref ServiceAccountName
       Tags:
         - Key: kubernetes.io/cluster
           Value: !Ref ClusterName
