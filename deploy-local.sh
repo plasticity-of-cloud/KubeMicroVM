@@ -9,6 +9,7 @@
 #   ./deploy-local.sh --region <region>      # AWS region (default: from aws config)
 #   ./deploy-local.sh --role-arn <arn>       # IRSA role ARN (skips Pod Identity setup)
 #   ./deploy-local.sh --skip-pod-identity    # skip Pod Identity role + association creation
+#   ./deploy-local.sh --eks-d-xpress         # use EKS-D-Xpress CLI for Pod Identity association
 #   ./deploy-local.sh --dry-run              # helm install --dry-run
 #
 set -euo pipefail
@@ -20,6 +21,8 @@ REGION=""
 ROLE_ARN=""
 DRY_RUN=false
 SKIP_POD_IDENTITY=false
+EKS_DX=false
+EKS_DX_CLI=""
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -35,6 +38,7 @@ while [[ $# -gt 0 ]]; do
     --role-arn)          ROLE_ARN="$2"; shift ;;
     --role-arn=*)        ROLE_ARN="${1#--role-arn=}" ;;
     --skip-pod-identity) SKIP_POD_IDENTITY=true ;;
+    --eks-d-xpress)      EKS_DX=true ;;
     --dry-run)           DRY_RUN=true ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
@@ -72,6 +76,14 @@ POD_IDENTITY_ROLE_NAME="kube-microvm-operator"
 if [[ -z "$ROLE_ARN" ]] && ! $SKIP_POD_IDENTITY && ! $DRY_RUN; then
   echo "--- Pod Identity"
 
+  # Resolve eks-dx CLI if requested
+  if $EKS_DX; then
+    EKS_DX_DIR="/home/ubuntu/projects/pl-cloud/eks-dx/eks-d-xpress-control-plane"
+    EKS_DX_CLI="${EKS_DX_DIR}/eks-dx-cli.sh"
+    [[ -x "$EKS_DX_CLI" ]] || { echo "eks-dx CLI not found at ${EKS_DX_CLI}" >&2; exit 1; }
+    echo "    Using EKS-D-Xpress CLI for Pod Identity"
+  fi
+
   # Create role if it doesn't exist
   if ! aws iam get-role --role-name "${POD_IDENTITY_ROLE_NAME}" &>/dev/null; then
     echo "    Creating IAM role ${POD_IDENTITY_ROLE_NAME}"
@@ -106,24 +118,41 @@ if [[ -z "$ROLE_ARN" ]] && ! $SKIP_POD_IDENTITY && ! $DRY_RUN; then
   ROLE_ARN_PI=$(aws iam get-role --role-name "${POD_IDENTITY_ROLE_NAME}" --query 'Role.Arn' --output text)
 
   # Create association if it doesn't exist
-  EXISTING=$(aws eks list-pod-identity-associations \
-    --cluster-name "${CLUSTER_NAME}" \
-    --namespace "${NAMESPACE}" \
-    --region "${REGION}" \
-    --query "associations[?serviceAccount=='${SA_NAME}'].associationId" \
-    --output text 2>/dev/null)
-
-  if [[ -z "$EXISTING" ]]; then
-    echo "    Creating Pod Identity association"
-    aws eks create-pod-identity-association \
+  if $EKS_DX; then
+    # Check via eks-dx CLI
+    EXISTING=$(cd "${EKS_DX_DIR}" && ./eks-dx-cli.sh list-associations \
+      --cluster-name "${CLUSTER_NAME}" 2>/dev/null \
+      | grep "${SA_NAME}" | grep "${NAMESPACE}" | head -1 || true)
+    if [[ -z "$EXISTING" ]]; then
+      echo "    Creating Pod Identity association (via eks-dx)"
+      cd "${EKS_DX_DIR}" && ./eks-dx-cli.sh create-association \
+        --cluster-name "${CLUSTER_NAME}" \
+        --namespace "${NAMESPACE}" \
+        --service-account "${SA_NAME}" \
+        --role-arn "${ROLE_ARN_PI}"
+      cd - > /dev/null
+    else
+      echo "    Pod Identity association already exists (eks-dx)"
+    fi
+  else
+    EXISTING=$(aws eks list-pod-identity-associations \
       --cluster-name "${CLUSTER_NAME}" \
       --namespace "${NAMESPACE}" \
-      --service-account "${SA_NAME}" \
-      --role-arn "${ROLE_ARN_PI}" \
       --region "${REGION}" \
-      --query 'association.associationId' --output text
-  else
-    echo "    Pod Identity association already exists: ${EXISTING}"
+      --query "associations[?serviceAccount=='${SA_NAME}'].associationId" \
+      --output text 2>/dev/null)
+    if [[ -z "$EXISTING" ]]; then
+      echo "    Creating Pod Identity association"
+      aws eks create-pod-identity-association \
+        --cluster-name "${CLUSTER_NAME}" \
+        --namespace "${NAMESPACE}" \
+        --service-account "${SA_NAME}" \
+        --role-arn "${ROLE_ARN_PI}" \
+        --region "${REGION}" \
+        --query 'association.associationId' --output text
+    else
+      echo "    Pod Identity association already exists: ${EXISTING}"
+    fi
   fi
 fi
 
