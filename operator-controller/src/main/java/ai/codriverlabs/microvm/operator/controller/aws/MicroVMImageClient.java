@@ -82,6 +82,26 @@ public class MicroVMImageClient {
                 .build());
     }
 
+    public CompletableFuture<GetMicrovmImageBuildResponse> getLatestBuild(
+            String imageIdentifier, String imageVersion) {
+        return sdk.listMicrovmImageBuilds(ListMicrovmImageBuildsRequest.builder()
+                .imageIdentifier(imageIdentifier)
+                .imageVersion(imageVersion)
+                .maxResults(1)
+                .build())
+                .thenCompose(list -> {
+                    if (!list.hasItems() || list.items().isEmpty()) {
+                        return java.util.concurrent.CompletableFuture.completedFuture(null);
+                    }
+                    String buildId = list.items().get(0).buildId();
+                    return sdk.getMicrovmImageBuild(GetMicrovmImageBuildRequest.builder()
+                            .imageIdentifier(imageIdentifier)
+                            .imageVersion(imageVersion)
+                            .buildId(buildId)
+                            .build());
+                });
+    }
+
     @PreDestroy
     void close() { sdk.close(); }
 }
