@@ -99,6 +99,51 @@ public class DefaultMicroVMClient implements MicroVMClient {
                 .thenApply(r -> r.authToken());
     }
 
+    @Override
+    public CompletableFuture<Map<String, String>> createShellAuthToken(
+            String microvmId, int expirationMinutes) {
+        return sdk.createMicrovmShellAuthToken(CreateMicrovmShellAuthTokenRequest.builder()
+                .microvmIdentifier(microvmId)
+                .expirationInMinutes(expirationMinutes)
+                .build())
+                .thenApply(r -> r.authToken());
+    }
+
+    @Override
+    public CompletableFuture<java.util.List<ai.codriverlabs.microvm.aws.lambdamicrovms.model.MicrovmItem>> listMicroVMs(
+            String imageIdentifier) {
+        var builder = ListMicrovmsRequest.builder();
+        if (imageIdentifier != null) builder.imageIdentifier(imageIdentifier);
+        return sdk.listMicrovms(builder.build())
+                .thenApply(r -> r.items());
+    }
+
+    @Override
+    public CompletableFuture<Void> tagResource(String resourceArn, Map<String, String> tags) {
+        return sdk.tagResource(TagResourceRequest.builder()
+                .resource(resourceArn)
+                .tags(tags)
+                .build())
+                .thenApply(r -> null);
+    }
+
+    @Override
+    public CompletableFuture<Void> untagResource(String resourceArn, java.util.List<String> tagKeys) {
+        return sdk.untagResource(UntagResourceRequest.builder()
+                .resource(resourceArn)
+                .tagKeys(tagKeys)
+                .build())
+                .thenApply(r -> null);
+    }
+
+    @Override
+    public CompletableFuture<Map<String, String>> listTags(String resourceArn) {
+        return sdk.listTags(ListTagsRequest.builder()
+                .resource(resourceArn)
+                .build())
+                .thenApply(r -> r.tags());
+    }
+
     @PreDestroy
     void close() {
         sdk.close();

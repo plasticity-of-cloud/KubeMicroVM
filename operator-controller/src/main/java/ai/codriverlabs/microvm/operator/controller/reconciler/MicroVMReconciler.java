@@ -21,6 +21,7 @@ import org.jboss.logging.Logger;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -104,8 +105,9 @@ public class MicroVMReconciler implements Reconciler<MicroVM>, Cleaner<MicroVM> 
 
             return switch (driftResult) {
                 case DriftDetector.DriftResult.NoOp noOp -> {
-                    // Aligned - update status and schedule re-sync
+                    // Aligned - update status, sync tags, schedule re-sync
                     updateStatusFromAws(resource, awsState);
+                    syncTags(resource, status.getMicroVmId());
                     yield UpdateControl.patchStatus(resource).rescheduleAfter(RESYNC_PERIOD);
                 }
                 case DriftDetector.DriftResult.ActionRequired action -> {
@@ -360,6 +362,17 @@ public class MicroVMReconciler implements Reconciler<MicroVM>, Cleaner<MicroVM> 
                 throw awsEx;
             }
             throw new RuntimeException("Failed to describe MicroVM: " + e.getMessage(), e);
+        }
+    }
+
+    private void syncTags(MicroVM resource, String microvmId) {
+        if (microvmId == null) return;
+        Map<String, String> labels = resource.getMetadata().getLabels();
+        if (labels == null || labels.isEmpty()) return;
+        try {
+            microVMClient.tagResource(microvmId, labels).get(AWS_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            LOG.warnf("Failed to sync tags to MicroVM %s: %s", microvmId, e.getMessage());
         }
     }
 
