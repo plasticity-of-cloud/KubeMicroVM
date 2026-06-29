@@ -165,9 +165,12 @@ jobs:
             [[ "${GITHUB_REF}" == refs/heads/main ]] && TAGS="${TAGS} ${IMAGE}:main"
             SHA_TAG="${SHA}"
           fi
+          AMD="${IMAGE}:${SHA_TAG}-amd64"
+          ARM="${IMAGE}:${SHA_TAG}-arm64"
+          # imagetools creates a proper multi-arch manifest from existing per-arch images
+          # Works correctly even when per-arch tags are themselves manifest lists
           for TAG in ${TAGS}; do
-            docker manifest create "${TAG}" "${IMAGE}:${SHA_TAG}-amd64" "${IMAGE}:${SHA_TAG}-arm64"
-            docker manifest push "${TAG}"
+            docker buildx imagetools create -t "${TAG}" "${AMD}" "${ARM}"
           done
 
   # ─── Helm chart ───────────────────────────────────────────────────────────
