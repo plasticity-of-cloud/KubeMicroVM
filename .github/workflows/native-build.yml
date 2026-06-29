@@ -195,10 +195,18 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          REGISTRY="ghcr.io/${OWNER}"
+
+          # Bump Chart.yaml metadata
           sed -i "s/^version:.*/version: ${VERSION}/" charts/kube-microvm-operator/Chart.yaml
           sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\"/" charts/kube-microvm-operator/Chart.yaml
+
+          # Pin image tags to exact release version using yq (available on ubuntu runners)
+          yq -i ".image.tag = \"${VERSION}\"" charts/kube-microvm-operator/values.yaml
+          yq -i ".authAgent.image.tag = \"${VERSION}\"" charts/kube-microvm-operator/values.yaml
+
           helm package charts/kube-microvm-operator --destination dist/
-          helm push dist/kube-microvm-operator-${VERSION}.tgz oci://ghcr.io/${OWNER}/helm
+          helm push dist/kube-microvm-operator-${VERSION}.tgz oci://${REGISTRY}/helm
       - uses: actions/upload-artifact@v4
         with:
           name: helm-chart
