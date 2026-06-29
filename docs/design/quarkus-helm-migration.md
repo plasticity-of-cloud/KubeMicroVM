@@ -372,7 +372,311 @@ Helm install command remains the same; the internal structure changes.
 
 ---
 
-## Files to Change
+## Updated `build-local.sh`
+
+After migration, `build-local.sh` passes Quarkus Helm + container-image properties directly to
+Maven — no separate chart packaging step.
+
+Key differences from current script:
+- `--push` triggers `quarkus.container-image.push=true` (Quarkus builds and pushes the image, no
+  separate `docker push`)
+- `--helm` generates the Helm chart tarball into `operator-controller/target/helm/`
+- `quarkus.helm.version=${IMAGE_TAG}` and `quarkus.container-image.tag=${IMAGE_TAG}` are always
+  passed together so image tag and chart version stay in sync
+- `--only operator|webhook|cli|agent` selects subsets
+
+```bash
+#!/usr/bin/env bash
+# build-local.sh — KubeMicroVM operator local build
+#
+# Usage:
+#   ./build-local.sh                          # JVM build, all modules
+#   ./build-local.sh --native                 # GraalVM native (CLI + operator)
+#   ./build-local.sh --skip-tests             # skip unit + integration tests
+#   ./build-local.sh --push                   # build + push container images
+#   ./build-local.sh --helm                   # generate Helm chart tarball
+#   ./build-local.sh --only operator          # build only operator-controller
+#   ./build-local.sh --only cli               # build only kubectl-microvm CLI
+#   ./build-local.sh --only operator,cli      # multiple modules
+#   ./build-local.sh --registry 123.dkr.ecr.us-east-1.amazonaws.com
+#   ./build-local.sh --push --helm --registry 123.dkr.ecr.us-east-1.amazonaws.com
+#
+set -euo pipefail
+
+NATIVE=false
+SKIP_TESTS=false
+PUSH=false
+HELM=false
+ONLY=""
+REGISTRY=""
+
+for arg in "$@"; do
+  case $arg in
+    --help)
+      echo "Usage: ./build-local.sh [OPTIONS]"
+      echo ""
+      echo "Options:"
+      echo "  --native              Build GraalVM native binaries (operator + CLI)"
+      echo "  --skip-tests          Skip tests"
+      echo "  --push                Push container images after build"
+      echo "  --helm                Generate Helm chart tarball"
+      echo "  --only <list>         Comma-separated: operator, webhook, cli, agent, tests"
+      echo "  --registry <url>      Container registry (default: ghcr.io/plasticity-of-cloud)"
+      echo "  --help                Show this help"
+      echo ""
+      echo "Examples:"
+      echo "  ./build-local.sh --skip-tests"
+      echo "  ./build-local.sh --push --helm --registry 123.dkr.ecr.us-east-1.amazonaws.com"
+      echo "  ./build-local.sh --native --only cli"
+      exit 0
+      ;;
+    --native)     NATIVE=true ;;
+    --skip-tests) SKIP_TESTS=true ;;
+    --push)       PUSH=true ;;
+    --helm)       HELM=true ;;
+    --only=*)     ONLY="${arg#--only=}" ;;
+    --registry=*) REGISTRY="${arg#--registry=}" ;;
+    --only)       ;;
+    --registry)   ;;
+    *)
+      if [[ "${PREV_ARG:-}" == "--only" ]];     then ONLY="$arg"
+      elif [[ "${PREV_ARG:-}" == "--registry" ]]; then REGISTRY="$arg"
+      fi
+      ;;
+  esac
+  PREV_ARG="$arg"
+done
+
+should_build() { [[ -z "$ONLY" ]] || [[ ",$ONLY," == *",$1,"* ]]; }
+
+SKIP_FLAG=""; $SKIP_TESTS && SKIP_FLAG="-DskipTests"
+
+# Resolve image tag from git (strip leading 'v' and dirty suffix)
+IMAGE_TAG=$(git describe --tags 2>/dev/null | sed 's/^v//;s/-[0-9]*-g[0-9a-f]*$//' || echo "dev")
+
+# ECR login if pushing to ECR
+if $PUSH && [[ "$REGISTRY" =~ \.dkr\.ecr\.([a-z0-9-]+)\.amazonaws\.com ]]; then
+  ECR_REGION="${BASH_REMATCH[1]}"
+  echo "==> ECR login (${ECR_REGION})"
+  aws ecr get-login-password --region "${ECR_REGION}" \
+    | docker login --username AWS --password-stdin "${REGISTRY}"
+fi
+
+# Container image flags (passed to Quarkus — it builds and optionally pushes)
+image_flags() {
+  local flags="-Dquarkus.container-image.build=true -Dquarkus.container-image.push=${PUSH}"
+  flags+=" -Dquarkus.container-image.tag=${IMAGE_TAG}"
+  [[ -n "$REGISTRY" ]] && flags+=" -Dquarkus.container-image.registry=${REGISTRY}"
+  echo "$flags"
+}
+
+echo "==> KubeMicroVM build  native=${NATIVE}  skipTests=${SKIP_TESTS}  only=${ONLY:-all}  push=${PUSH}  helm=${HELM}  tag=${IMAGE_TAG}"
+
+# 0. Parent POM + core + SDK clients (always required)
+echo "--- [0] parent + operator-core + SDK clients"
+./mvnw -B -N install $SKIP_FLAG
+./mvnw -B -pl operator-core,operator-aws-client,operator-aws-client-core install $SKIP_FLAG
+
+# 1. Operator controller (Quarkus builds image + Helm chart)
+if should_build "operator"; then
+  echo "--- [1] operator-controller"
+  HELM_FLAGS=""
+  $HELM && HELM_FLAGS="-Dquarkus.helm.version=${IMAGE_TAG} -Dquarkus.helm.create-tar-file=true"
+  if $NATIVE; then
+    ./mvnw -B -pl operator-controller package $SKIP_FLAG -Dnative \
+      -Dquarkus.native.container-build=false \
+      $(image_flags) $HELM_FLAGS
+  else
+    ./mvnw -B -pl operator-controller package $SKIP_FLAG \
+      $(image_flags) $HELM_FLAGS
+  fi
+  $HELM && echo "==> Helm chart: operator-controller/target/helm/kubernetes/kube-microvm-operator-${IMAGE_TAG}.tar.gz"
+fi
+
+# 2. Webhook (bundled inside operator-controller — separate module only if split in future)
+
+# 3. CLI
+if should_build "cli"; then
+  echo "--- [2] operator-cli"
+  if $NATIVE; then
+    ./mvnw -B -pl operator-cli package $SKIP_FLAG -Dnative \
+      -Dquarkus.native.container-build=false
+    echo "==> CLI binary: operator-cli/target/operator-cli-*-runner"
+  else
+    ./mvnw -B -pl operator-cli package $SKIP_FLAG
+    echo "==> CLI jar: operator-cli/target/quarkus-app/"
+  fi
+fi
+
+# 4. Auth agent sidecar
+if should_build "agent"; then
+  echo "--- [3] operator-auth-agent"
+  if $NATIVE; then
+    AGENT_REGISTRY="${REGISTRY:-ghcr.io/plasticity-of-cloud}"
+    ./mvnw -B -pl operator-auth-agent package $SKIP_FLAG -Dnative \
+      -Dquarkus.native.container-build=false \
+      -Dquarkus.container-image.build=true \
+      -Dquarkus.container-image.push=${PUSH} \
+      -Dquarkus.container-image.tag=${IMAGE_TAG} \
+      -Dquarkus.container-image.registry=${AGENT_REGISTRY%%/*} \
+      -Dquarkus.container-image.group=${AGENT_REGISTRY#*/}
+  else
+    ./mvnw -B -pl operator-auth-agent package $SKIP_FLAG
+  fi
+fi
+
+# 5. Integration tests
+if should_build "tests"; then
+  echo "--- [4] operator-tests"
+  ./mvnw -B -pl operator-tests verify
+fi
+
+echo ""
+echo "==> Build complete  (tag: ${IMAGE_TAG})"
+```
+
+---
+
+## Updated `deploy-local.sh`
+
+After migration, deploy uses `helm upgrade --install` pointing to either:
+- The generated tarball at `operator-controller/target/helm/kubernetes/kube-microvm-operator-*.tar.gz`
+- Or the GHCR OCI registry (for production)
+
+Key differences from current script:
+- No `aws eks create-pod-identity-association` scaffolding (moved to one-time `setup.sh`)
+- Supports `--from-registry` to deploy directly from GHCR OCI
+- `--region` and `--cluster` are explicit flags
+- `--dry-run` for validation without deploying
+
+```bash
+#!/usr/bin/env bash
+# deploy-local.sh — deploy KubeMicroVM operator to an EKS cluster
+#
+# Usage:
+#   ./deploy-local.sh                              # deploy from local build
+#   ./deploy-local.sh --skip-build                 # helm upgrade only (reuse existing chart)
+#   ./deploy-local.sh --from-registry              # deploy from GHCR OCI (no local build)
+#   ./deploy-local.sh --region us-east-1           # target AWS region
+#   ./deploy-local.sh --cluster my-cluster         # EKS cluster name
+#   ./deploy-local.sh --profile my-aws-profile     # AWS CLI profile
+#   ./deploy-local.sh --dry-run                    # helm upgrade --dry-run
+#   ./deploy-local.sh --set key=val                # extra helm values (repeatable)
+#
+set -euo pipefail
+
+SKIP_BUILD=false
+FROM_REGISTRY=false
+DRY_RUN=false
+REGION="${AWS_REGION:-us-east-1}"
+CLUSTER=""
+AWS_PROFILE=""
+EXTRA_SET_ARGS=""
+NAMESPACE="kube-microvm"
+RELEASE="kube-microvm-operator"
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --help)
+      echo "Usage: ./deploy-local.sh [OPTIONS]"
+      echo ""
+      echo "Options:"
+      echo "  --skip-build          Skip Maven build; use existing chart tarball"
+      echo "  --from-registry       Deploy from GHCR OCI (ignores local build)"
+      echo "  --region <region>     AWS region (default: \$AWS_REGION or us-east-1)"
+      echo "  --cluster <name>      EKS cluster name (default: auto-detect from kubeconfig)"
+      echo "  --profile <name>      AWS CLI profile"
+      echo "  --namespace <ns>      Kubernetes namespace (default: kube-microvm)"
+      echo "  --dry-run             Helm dry-run (no actual deploy)"
+      echo "  --set key=val         Extra helm --set values (repeatable)"
+      echo "  --help                Show this help"
+      echo ""
+      echo "Examples:"
+      echo "  ./deploy-local.sh --region us-east-1 --cluster my-cluster"
+      echo "  ./deploy-local.sh --skip-build --dry-run"
+      echo "  ./deploy-local.sh --from-registry --region us-east-2"
+      echo "  ./deploy-local.sh --set app.envs.microvm\\.aws\\.region=us-east-1"
+      exit 0
+      ;;
+    --skip-build)    SKIP_BUILD=true ;;
+    --from-registry) FROM_REGISTRY=true; SKIP_BUILD=true ;;
+    --dry-run)       DRY_RUN=true ;;
+    --region)        REGION="$2"; shift ;;
+    --cluster)       CLUSTER="$2"; shift ;;
+    --profile)       AWS_PROFILE="$2"; shift ;;
+    --namespace)     NAMESPACE="$2"; shift ;;
+    --set)           EXTRA_SET_ARGS="$EXTRA_SET_ARGS --set $2"; shift ;;
+    *) echo "Unknown option: $1" >&2; exit 1 ;;
+  esac
+  shift
+done
+
+PROFILE_FLAG=""; [[ -n "$AWS_PROFILE" ]] && PROFILE_FLAG="--profile $AWS_PROFILE"
+IMAGE_TAG=$(git describe --tags 2>/dev/null | sed 's/^v//;s/-[0-9]*-g[0-9a-f]*$//' || echo "dev")
+DRY_RUN_FLAG=""; $DRY_RUN && DRY_RUN_FLAG="--dry-run"
+
+# Update kubeconfig
+if [[ -n "$CLUSTER" ]]; then
+  echo "==> Updating kubeconfig for cluster ${CLUSTER} in ${REGION}"
+  aws eks update-kubeconfig --region "$REGION" --name "$CLUSTER" $PROFILE_FLAG
+fi
+
+# Build if needed
+if ! $SKIP_BUILD; then
+  echo "==> Building operator (tag: ${IMAGE_TAG})"
+  ./build-local.sh --helm --skip-tests
+fi
+
+# Resolve chart source
+if $FROM_REGISTRY; then
+  CHART="oci://ghcr.io/plasticity-of-cloud/helm/kube-microvm-operator"
+  echo "==> Deploying from GHCR OCI registry"
+else
+  CHART=$(ls operator-controller/target/helm/kubernetes/kube-microvm-operator-*.tar.gz 2>/dev/null | head -1)
+  if [[ -z "$CHART" ]]; then
+    echo "ERROR: No chart tarball found. Run ./build-local.sh --helm first." >&2
+    exit 1
+  fi
+  echo "==> Deploying from local chart: ${CHART}"
+fi
+
+# Ensure namespace exists
+kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+
+# Helm upgrade --install
+echo "==> helm upgrade --install ${RELEASE} (namespace: ${NAMESPACE}, dry-run: ${DRY_RUN})"
+helm upgrade --install "$RELEASE" "$CHART" \
+  --namespace "$NAMESPACE" \
+  --create-namespace \
+  --set "app.envs.microvm\\.aws\\.region=${REGION}" \
+  $EXTRA_SET_ARGS \
+  $DRY_RUN_FLAG \
+  --wait \
+  --timeout 5m
+
+if ! $DRY_RUN; then
+  echo ""
+  echo "==> Deploy complete"
+  echo "    Operator: $(kubectl get pods -n ${NAMESPACE} -l app.kubernetes.io/name=kube-microvm-operator -o name 2>/dev/null | head -1)"
+  echo ""
+  echo "    Install kubectl plugin:"
+  echo "    ./install-kubectl-plugin.sh"
+fi
+```
+
+---
+
+## Key Differences from Current Scripts
+
+| | Current | After migration |
+|-|---------|-----------------|
+| Image build | `docker buildx` in CI only | `quarkus.container-image.build=true` — Maven drives it |
+| Image tag | `yq` post-processing in CI | `-Dquarkus.container-image.tag=${VERSION}` at build time |
+| Helm chart | `helm package charts/kube-microvm-operator/` | `mvn package -Dquarkus.helm.version=${VERSION}` |
+| Chart source on deploy | `charts/kube-microvm-operator/` | `operator-controller/target/helm/kubernetes/` |
+| Push | Separate `docker push` step | `quarkus.container-image.push=true` |
+| ECR repo creation | `deploy-local.sh` | `build-local.sh` (`ensure_ecr_repo`) |
+| Namespace setup | `deploy-local.sh` manages Pod Identity | `deploy-local.sh` just `kubectl create namespace` + `helm upgrade` |
 
 | Action | File |
 |--------|------|
