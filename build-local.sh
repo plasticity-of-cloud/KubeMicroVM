@@ -77,15 +77,15 @@ fi
 
 # Build Quarkus container-image flags
 image_flags() {
-  # Only build/push image when --push is set; otherwise skip image build entirely
+  # Only build/push image when --push is set
   if $PUSH; then
-    local flags="-Dquarkus.container-image.build=true -Dquarkus.container-image.push=true"
+    local flags="-Pjib"   # Jib: no local Docker needed, cross-compiles linux/amd64+arm64
+    flags+=" -Dquarkus.container-image.build=true -Dquarkus.container-image.push=true"
     flags+=" -Dquarkus.container-image.tag=${IMAGE_TAG}"
     [[ -n "$REGISTRY" ]] && flags+=" -Dquarkus.container-image.registry=${REGISTRY%%/*}"
     [[ -n "$REGISTRY" && "$REGISTRY" == */* ]] && flags+=" -Dquarkus.container-image.group=${REGISTRY#*/}"
     echo "$flags"
   else
-    # No image build — just compile and package
     echo "-Dquarkus.container-image.build=false"
   fi
 }

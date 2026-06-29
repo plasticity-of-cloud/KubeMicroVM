@@ -140,4 +140,42 @@
         </plugins>
     </build>
 
+    <profiles>
+        <!-- jib: cross-platform build without local Docker daemon.
+             Used for local dev builds targeting the EKS arm64 nodes.
+             Usage: ./mvnw package -Pjib -Dquarkus.container-image.push=true
+             Also activated by build-local.sh with the push flag. -->
+        <profile>
+            <id>jib</id>
+            <activation>
+                <property><name>jib</name></property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>io.quarkus</groupId>
+                    <artifactId>quarkus-container-image-jib</artifactId>
+                </dependency>
+            </dependencies>
+            <properties>
+                <quarkus.container-image.builder>jib</quarkus.container-image.builder>
+                <!-- Build for both arches so the image runs on amd64 CI and arm64 Graviton nodes -->
+                <quarkus.jib.platforms>linux/amd64,linux/arm64</quarkus.jib.platforms>
+            </properties>
+        </profile>
+
+        <!-- native: GraalVM native image build.
+             Used by CI (per-arch runners) and build-local.sh with the native flag. -->
+        <profile>
+            <id>native</id>
+            <activation>
+                <property><name>native</name></property>
+            </activation>
+            <properties>
+                <quarkus.native.enabled>true</quarkus.native.enabled>
+                <!-- container-build=false: native binary built on host, not inside Docker -->
+                <quarkus.native.container-build>false</quarkus.native.container-build>
+            </properties>
+        </profile>
+    </profiles>
+
 </project>
