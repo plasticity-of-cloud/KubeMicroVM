@@ -11,7 +11,7 @@ KubeMicroVM is a Kubernetes operator that provides a **platform layer** on top o
 | MicroVM CRUD | ✅ (auto-generated) | ✅ (with state machine + drift detection) |
 | MicroVM Image management | ✅ (raw API mapping) | ✅ (build pipeline abstraction) |
 | Network Connector management | ✅ (raw API mapping) | ✅ (declarative, validated) |
-| Pool/ReplicaSet semantics | ❌ | ✅ (MicroVMPool with scaling) |
+| Pool/ReplicaSet semantics | ❌ | ✅ (MicroVMReplicaSet with scaling) |
 | Template abstraction | ❌ | ✅ (MicroVMTemplate) |
 | Drift detection & self-healing | ❌ | ✅ |
 | Admission webhooks (validation, mutation, quota) | ❌ | ✅ |
@@ -34,7 +34,7 @@ KubeMicroVM is a Kubernetes operator that provides a **platform layer** on top o
 | [CRD Design](crds.md) | Custom Resource definitions and field semantics |
 | [Networking](networking.md) | Network Connector integration and MicroVMNetwork design |
 | [Lifecycle & State Machine](lifecycle.md) | MicroVM states, transitions, suspend/resume policies |
-| [Pool Management](pool.md) | MicroVMPool scaling, rolling updates, health-based eviction |
+| [Pool Management](replicaset.md) | MicroVMReplicaSet scaling, rolling updates, health-based eviction |
 | [Image Management](images.md) | MicroVMImage build pipeline and versioning |
 | [Webhooks](webhooks.md) | Admission webhook validation, mutation, and quota enforcement |
 | [IAM & Security](iam.md) | IAM roles, Pod Identity, least-privilege design |

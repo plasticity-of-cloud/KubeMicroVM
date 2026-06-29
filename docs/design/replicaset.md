@@ -1,8 +1,8 @@
-# Pool Management
+# ReplicaSet Management
 
 ## Overview
 
-`MicroVMPool` provides ReplicaSet-like semantics for MicroVMs — maintaining a desired count of identical instances, handling scale-up/down, rolling updates, and health-based eviction.
+`MicroVMReplicaSet` provides ReplicaSet-like semantics for MicroVMs — maintaining a desired count of identical instances, handling scale-up/down, rolling updates, and health-based eviction.
 
 ## Scaling
 
@@ -12,8 +12,8 @@ When `status.currentReplicas < spec.replicas`:
 
 1. Operator creates child `MicroVM` CRs from `spec.template`
 2. Each child gets:
-   - `metadata.generateName: <pool-name>-`
-   - `metadata.labels: {"lambda.aws.amazon.com/pool-name": "<pool-name>"}`
+   - `metadata.generateName: <replicaset-name>-`
+   - `metadata.labels: {"lambda.aws.amazon.com/replicaset-name": "<replicaset-name>"}`
    - `metadata.ownerReferences` pointing to the pool (cascade delete)
 3. Maximum `maxSurge` additional MicroVMs beyond desired replicas (for rolling updates)
 4. Throttled to 5 creations per reconcile cycle (prevent API burst)
@@ -89,14 +89,14 @@ status:
 ## Pool ↔ MicroVM Relationship
 
 ```
-MicroVMPool (owner)
+MicroVMReplicaSet (owner)
   ├── MicroVM (child, ownerRef → pool)
   ├── MicroVM (child, ownerRef → pool)
   └── MicroVM (child, ownerRef → pool)
 ```
 
 - Deleting the pool cascades to all children (Kubernetes GC)
-- Children have label `lambda.aws.amazon.com/pool-name` for selection
+- Children have label `lambda.aws.amazon.com/replicaset-name` for selection
 - Children cannot be adopted by a different pool
 
 ## Suspend Pool

@@ -70,13 +70,13 @@ status:
       message: "Network connector is active"
 ```
 
-### MicroVMPool
+### MicroVMReplicaSet
 
 Manages a set of identical MicroVMs, similar to ReplicaSet/Deployment semantics.
 
 ```yaml
 apiVersion: lambda.aws.amazon.com/v1alpha1
-kind: MicroVMPool
+kind: MicroVMReplicaSet
 metadata:
   name: ci-runners
   namespace: platform
@@ -251,8 +251,8 @@ status:
 | MicroVM | `idlePolicy.suspendedDurationSeconds` | 1–28800 |
 | MicroVM | `desiredState` | Running, Suspended, Terminated |
 | MicroVM | `runHookPayload` | Max 16 KB string |
-| MicroVMPool | `replicas` | 0–100 |
-| MicroVMPool | `maxSurge` | 0–10 |
+| MicroVMReplicaSet | `replicas` | 0–100 |
+| MicroVMReplicaSet | `maxSurge` | 0–10 |
 | MicroVMNetwork | `networkProtocol` | IPv4, DualStack |
 | MicroVMImage | `memorySizeMB` | One of: 512, 1024, 2048, 4096, 8192 |
 | MicroVMImage | `buildTimeout` | 1–3600 |
@@ -260,5 +260,5 @@ status:
 
 ## Owner References
 
-- `MicroVMPool` → owns child `MicroVM` resources (cascade delete)
+- `MicroVMReplicaSet` → owns child `MicroVM` resources (cascade delete)
 - `MicroVM` → references `MicroVMImage`, `MicroVMNetwork`, `MicroVMTemplate` (non-owning)
