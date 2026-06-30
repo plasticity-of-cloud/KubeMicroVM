@@ -10,7 +10,42 @@ rules:
   resources: ["microvms/token"]
   verbs: ["create"]
 ---
-# cert-manager Certificate for the webhook TLS
+# cert-manager: SelfSigned Issuer (namespace-scoped, bootstraps the CA)
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: kube-microvm-operator-selfsigned
+  namespace: kube-microvm
+spec:
+  selfSigned: {}
+---
+# cert-manager: CA Certificate (self-signed root)
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: kube-microvm-operator-ca
+  namespace: kube-microvm
+spec:
+  isCA: true
+  commonName: kube-microvm-operator-ca
+  secretName: kube-microvm-operator-ca
+  issuerRef:
+    name: kube-microvm-operator-selfsigned
+    kind: Issuer
+  duration: 87600h
+  renewBefore: 720h
+---
+# cert-manager: CA Issuer (signs leaf certs using the CA)
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: kube-microvm-operator-ca
+  namespace: kube-microvm
+spec:
+  ca:
+    secretName: kube-microvm-operator-ca
+---
+# cert-manager: Leaf Certificate for webhook TLS (issued by the CA)
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -22,8 +57,8 @@ spec:
   - kube-microvm-operator.kube-microvm.svc
   - kube-microvm-operator.kube-microvm.svc.cluster.local
   issuerRef:
-    name: selfsigned-issuer
-    kind: ClusterIssuer
+    name: kube-microvm-operator-ca
+    kind: Issuer
   duration: 8760h
   renewBefore: 720h
 ---
