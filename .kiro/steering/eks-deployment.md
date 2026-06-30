@@ -4,28 +4,63 @@
 
 When deploying to the EKS test cluster during development:
 
-1. **Always force-uninstall the old chart first** before deploying a new version:
+1. **Delete webhook configurations first** (they block CR edits when operator is down):
+   ```bash
+   kubectl delete validatingwebhookconfiguration kube-microvm-operator-validating --ignore-not-found
+   kubectl delete mutatingwebhookconfiguration kube-microvm-operator-mutating --ignore-not-found
+   ```
+
+2. **Force-remove all custom resources** (finalizers block deletion without operator):
+   ```bash
+   # Patch out finalizers and delete
+   for cr in microvmimages microvms microvmreplicasets microvmnetworks; do
+     kubectl get $cr -A -o json 2>/dev/null | \
+       python3 -c "import json,sys; items=json.load(sys.stdin).get('items',[]); [print(i['metadata']['namespace']+'/'+i['metadata']['name']) for i in items]" 2>/dev/null | \
+       while read ns_name; do
+         ns="${ns_name%%/*}"; name="${ns_name##*/}"
+         kubectl patch $cr "$name" -n "$ns" --type=json -p='[{"op":"remove","path":"/metadata/finalizers"}]' 2>/dev/null
+         kubectl delete $cr "$name" -n "$ns" --force 2>/dev/null
+       done
+   done
+   ```
+
+3. **Force-uninstall the Helm chart**:
    ```bash
    helm uninstall kube-microvm-operator -n kube-microvm --wait
-   # Remove any stuck resources (finalizers can block namespace cleanup)
-   kubectl delete microvmimages,microvms,microvmreplicasets,microvmnetworks -A --all --force 2>/dev/null
+   # Clean up cert-manager resources
+   kubectl delete secret kube-microvm-operator-webhook-tls kube-microvm-operator-ca -n kube-microvm --ignore-not-found
+   kubectl delete certificate,issuer --all -n kube-microvm --ignore-not-found
    ```
 
-2. **Only then deploy the new chart**:
+4. **Only then install the new chart** (never `helm upgrade` during dev iteration):
    ```bash
-   helm install kube-microvm-operator <chart> -n kube-microvm ...
+   helm install kube-microvm-operator <chart> -n kube-microvm \
+     --set app.image=<ecr-image> \
+     --set app.envs.AWS_REGION=us-east-1 \
+     --set app.envs.AWS_MICROVM_ENDPOINT=https://lambda-microvm.us-east-1.on.aws \
+     --timeout 4m --wait
    ```
 
-3. **Always use `imagePullPolicy: Always`** to ensure the latest image is pulled,
-   even when reusing the same tag (e.g. `0.0.1-rc1`):
-   ```bash
-   --set app.imagePullPolicy=Always
-   ```
+4. **Always use `imagePullPolicy: Always`** to ensure the latest image is pulled,
+   even when reusing the same tag (e.g. `0.0.1-rc1`). This is set in application.properties.
 
 ## Rationale
 
+- Custom resources with finalizers cannot be deleted without a running operator.
+  Always patch out finalizers before uninstalling the chart.
 - `helm upgrade` during development often leaves stale resources (old secrets, CRDs, finalizers)
-  that conflict with the new deployment.
+  that conflict with the new deployment. Always uninstall + install.
 - With a fixed tag like `0.0.1-rc1`, Kubernetes defaults to `IfNotPresent` and won't
   pull the updated image unless `imagePullPolicy: Always` is explicitly set.
 - cert-manager Certificates and Secrets must be re-created when the issuer chain changes.
+
+## VPC Endpoint Requirements
+
+The operator running in private subnets requires these VPC endpoints:
+- `com.amazonaws.<region>.eks-auth` — Pod Identity credential resolution
+- `com.amazonaws.<region>.lambda-microvm` — Lambda MicroVMs API (private DNS: `lambda-microvm.<region>.on.aws`)
+- `com.amazonaws.<region>.sts` — STS for credential validation
+- `com.amazonaws.<region>.ecr.api` + `com.amazonaws.<region>.ecr.dkr` — image pulls
+- `com.amazonaws.<region>.s3` (Gateway) — ECR layers + S3 code artifacts
+
+The `aws.microvm.endpoint` config property overrides the SDK endpoint to use the VPC endpoint DNS.

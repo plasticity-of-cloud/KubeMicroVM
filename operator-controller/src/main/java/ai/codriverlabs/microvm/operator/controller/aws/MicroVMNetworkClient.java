@@ -3,6 +3,7 @@ package ai.codriverlabs.microvm.operator.controller.aws;
 import ai.codriverlabs.microvm.aws.lambdacore.LambdaCoreAsyncClient;
 import ai.codriverlabs.microvm.aws.lambdacore.model.*;
 import ai.codriverlabs.microvm.operator.core.model.MicroVMNetworkSpec;
+import java.net.URI;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import software.amazon.awssdk.regions.Region;
@@ -20,10 +21,14 @@ public class MicroVMNetworkClient {
     private final LambdaCoreAsyncClient sdk;
 
     public MicroVMNetworkClient(
-            @ConfigProperty(name = "microvm.aws.region", defaultValue = "us-east-1") String region) {
-        this.sdk = LambdaCoreAsyncClient.builder()
-                .region(Region.of(region))
-                .build();
+            @ConfigProperty(name = "microvm.aws.region", defaultValue = "us-east-1") String region,
+            @ConfigProperty(name = "aws.microvm.endpoint", defaultValue = "") String endpoint) {
+        var builder = LambdaCoreAsyncClient.builder()
+                .region(Region.of(region));
+        if (endpoint != null && !endpoint.isBlank()) {
+            builder.endpointOverride(URI.create(endpoint));
+        }
+        this.sdk = builder.build();
     }
 
     public CompletableFuture<CreateNetworkConnectorResponse> createConnector(
