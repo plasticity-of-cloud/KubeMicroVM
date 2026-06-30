@@ -18,6 +18,13 @@ Parameters:
     Default: kube-microvm-operator
     Description: Kubernetes ServiceAccount name used by the operator
 
+  BuildRoleArn:
+    Type: String
+    Default: ''
+    Description: >-
+      ARN of the IAM role used by the MicroVM image build service.
+      Required for iam:PassRole when creating MicroVM images.
+
   OIDCProviderArn:
     Type: String
     Default: ''
@@ -36,6 +43,7 @@ Parameters:
 Conditions:
   IsPodIdentity: !Equals [!Ref UsePodIdentity, 'true']
   IsIRSA: !Not [!Equals [!Ref UsePodIdentity, 'true']]
+  HasBuildRole: !Not [!Equals [!Ref BuildRoleArn, '']]
 
 Resources:
   OperatorRole:
@@ -81,37 +89,82 @@ Resources:
         Version: '2012-10-17'
         Statement:
           # MicroVM lifecycle management
-          - Sid: MicroVMLifecycle
+          - Sid: MicroVMOperations
             Effect: Allow
             Action:
-              - lambda:CreateMicroVM
-              - lambda:DescribeMicroVM
-              - lambda:StartMicroVM
-              - lambda:StopMicroVM
-              - lambda:PauseMicroVM
-              - lambda:ResumeMicroVM
-              - lambda:DeleteMicroVM
-              - lambda:ListMicroVMs
+              - lambda:RunMicrovm
+              - lambda:GetMicrovm
+              - lambda:ListMicrovms
+              - lambda:SuspendMicrovm
+              - lambda:ResumeMicrovm
+              - lambda:TerminateMicrovm
+              - lambda:CreateMicrovmAuthToken
+              - lambda:CreateMicrovmShellAuthToken
             Resource: !Sub 'arn:aws:lambda:*:${AWS::AccountId}:microvm:*'
 
-          # VPC/networking read access for network validation
-          - Sid: NetworkReadOnly
+          # MicroVM image management
+          - Sid: MicroVMImageOperations
             Effect: Allow
             Action:
-              - ec2:DescribeVpcs
-              - ec2:DescribeSubnets
-              - ec2:DescribeSecurityGroups
+              - lambda:CreateMicrovmImage
+              - lambda:GetMicrovmImage
+              - lambda:UpdateMicrovmImage
+              - lambda:DeleteMicrovmImage
+              - lambda:ListMicrovmImages
+              - lambda:GetMicrovmImageVersion
+              - lambda:ListMicrovmImageVersions
+              - lambda:UpdateMicrovmImageVersion
+              - lambda:DeleteMicrovmImageVersion
+              - lambda:GetMicrovmImageBuild
+              - lambda:ListMicrovmImageBuilds
+              - lambda:ListManagedMicrovmImages
+              - lambda:ListManagedMicrovmImageVersions
             Resource: '*'
-            Condition:
-              StringEquals:
-                aws:RequestedRegion: !Ref 'AWS::Region'
 
-          # STS for caller identity verification
-          - Sid: CallerIdentity
+          # Network connector management
+          - Sid: NetworkConnectorOperations
+            Effect: Allow
+            Action:
+              - lambda:CreateNetworkConnector
+              - lambda:GetNetworkConnector
+              - lambda:UpdateNetworkConnector
+              - lambda:DeleteNetworkConnector
+              - lambda:ListNetworkConnectors
+              - lambda:PassNetworkConnector
+            Resource: '*'
+
+          # Tagging (scoped to account)
+          - Sid: Tagging
+            Effect: Allow
+            Action:
+              - lambda:TagResource
+              - lambda:UntagResource
+              - lambda:ListTags
+            Resource: !Sub 'arn:aws:lambda:*:${AWS::AccountId}:*'
+
+          # STS for caller identity verification (health check)
+          - Sid: Identity
             Effect: Allow
             Action:
               - sts:GetCallerIdentity
             Resource: '*'
+
+  # PassRole for the build service role (conditional)
+  PassBuildRolePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Condition: HasBuildRole
+    Properties:
+      ManagedPolicyName: !Sub 'KubeMicroVMPassBuildRole-${ClusterName}'
+      Description: Allows operator to pass the build role to MicroVM image service
+      Roles:
+        - !Ref OperatorRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: PassBuildRole
+            Effect: Allow
+            Action: iam:PassRole
+            Resource: !Ref BuildRoleArn
 
 Outputs:
   RoleArn:
