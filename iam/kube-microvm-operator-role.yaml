@@ -3,10 +3,10 @@ Description: |
   KubeMicroVM Operator IAM Role — least-privilege access for managing
   AWS Lambda MicroVMs from an EKS cluster via Pod Identity.
   
-  This role is account-scoped (not cluster-scoped) because MicroVM resources
-  (images, VMs, network connectors) are account-level. Multiple EKS clusters
-  in the same account can share this role by each creating a Pod Identity
-  association pointing to it.
+  Deploy once per region. Multiple EKS clusters in the same region share
+  this role by each creating a Pod Identity association pointing to it.
+  MicroVM resources (images, VMs, network connectors) are regional — this
+  role is scoped to the deployment region only.
 
 Parameters:
   BuildRoleArn:
@@ -63,9 +63,9 @@ Resources:
               - lambda:TerminateMicrovm
               - lambda:CreateMicrovmAuthToken
               - lambda:CreateMicrovmShellAuthToken
-            Resource: !Sub 'arn:aws:lambda:*:${AWS::AccountId}:microvm:*'
+            Resource: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:microvm:*'
 
-          # MicroVM image management
+          # MicroVM image management (region-scoped)
           - Sid: MicroVMImageOperations
             Effect: Allow
             Action:
@@ -80,11 +80,17 @@ Resources:
               - lambda:DeleteMicrovmImageVersion
               - lambda:GetMicrovmImageBuild
               - lambda:ListMicrovmImageBuilds
+            Resource: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:microvm-image:*'
+
+          # AWS-managed base images (read-only, cross-account)
+          - Sid: ManagedBaseImages
+            Effect: Allow
+            Action:
               - lambda:ListManagedMicrovmImages
               - lambda:ListManagedMicrovmImageVersions
             Resource: '*'
 
-          # Network connector management
+          # Network connector management (region-scoped, VPC resources are regional)
           - Sid: NetworkConnectorOperations
             Effect: Allow
             Action:
@@ -94,16 +100,16 @@ Resources:
               - lambda:DeleteNetworkConnector
               - lambda:ListNetworkConnectors
               - lambda:PassNetworkConnector
-            Resource: '*'
+            Resource: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:network-connector:*'
 
-          # Tagging (scoped to account)
+          # Tagging (region-scoped)
           - Sid: Tagging
             Effect: Allow
             Action:
               - lambda:TagResource
               - lambda:UntagResource
               - lambda:ListTags
-            Resource: !Sub 'arn:aws:lambda:*:${AWS::AccountId}:*'
+            Resource: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:*'
 
           # STS for caller identity verification (health check)
           - Sid: Identity
