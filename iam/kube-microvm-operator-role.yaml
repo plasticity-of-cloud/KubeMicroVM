@@ -51,11 +51,11 @@ Resources:
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
-          # All Lambda MicroVM operations — scoped to this region + account.
-          # NOTE: IAM resource-level scoping by sub-resource type (microvm:*, microvm-image:*,
-          # network-connector:*) is NOT reliable because the service reports cross-resource ARNs
-          # in authorization context (e.g. GetMicrovm evaluates against microvm-image ARN).
-          # Use a single statement with arn:aws:lambda:REGION:ACCOUNT:* for all actions.
+          # All Lambda MicroVM operations.
+          # NOTE: Resource must be '*' because the service uses varying resource ARNs
+          # in its authorization context (e.g. GetMicrovm evaluates against microvm-image ARN,
+          # Create actions evaluate against Resource:*). Region isolation is enforced by
+          # deploying this stack per-region and the service only operating within its region.
           - Sid: LambdaMicroVMAllActions
             Effect: Allow
             Action:
@@ -87,14 +87,6 @@ Resources:
               - lambda:TagResource
               - lambda:UntagResource
               - lambda:ListTags
-            Resource: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:*'
-
-          # AWS-managed base images (read-only, cross-account)
-          - Sid: ManagedBaseImages
-            Effect: Allow
-            Action:
-              - lambda:ListManagedMicrovmImages
-              - lambda:ListManagedMicrovmImageVersions
             Resource: '*'
 
           # STS for caller identity verification (health check)
