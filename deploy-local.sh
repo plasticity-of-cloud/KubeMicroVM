@@ -91,6 +91,87 @@ fi
 # Ensure namespace exists
 kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 
+# Ensure Pod Identity association exists (idempotent)
+if ! $DRY_RUN; then
+  ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text $PROFILE_FLAG 2>/dev/null)
+  ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/kube-microvm-operator"
+  CLUSTER_NAME="${CLUSTER:-$(kubectl config current-context | sed 's|.*:cluster/||' 2>/dev/null || echo "")}"
+
+  if [[ -n "$CLUSTER_NAME" ]]; then
+    # Ensure IAM role exists with correct trust policy for Pod Identity
+    if ! aws iam get-role --role-name kube-microvm-operator $PROFILE_FLAG &>/dev/null; then
+      echo "==> Creating IAM role kube-microvm-operator"
+      aws iam create-role \
+        --role-name kube-microvm-operator \
+        --assume-role-policy-document '{
+          "Version": "2012-10-17",
+          "Statement": [{
+            "Effect": "Allow",
+            "Principal": {"Service": "pods.eks.amazonaws.com"},
+            "Action": ["sts:AssumeRole", "sts:TagSession"]
+          }]
+        }' \
+        $PROFILE_FLAG --output text --query 'Role.Arn'
+    else
+      # Ensure trust policy includes pods.eks.amazonaws.com
+      TRUST=$(aws iam get-role --role-name kube-microvm-operator $PROFILE_FLAG \
+        --query 'Role.AssumeRolePolicyDocument' --output json 2>/dev/null)
+      if ! echo "$TRUST" | grep -q "pods.eks.amazonaws.com"; then
+        echo "==> Updating trust policy to include pods.eks.amazonaws.com"
+        UPDATED=$(echo "$TRUST" | python3 -c "
+import json, sys
+doc = json.load(sys.stdin)
+pod_id_stmt = {'Effect':'Allow','Principal':{'Service':'pods.eks.amazonaws.com'},'Action':['sts:AssumeRole','sts:TagSession']}
+if not any('pods.eks.amazonaws.com' in json.dumps(s) for s in doc.get('Statement',[])):
+    doc['Statement'].append(pod_id_stmt)
+print(json.dumps(doc))
+")
+        aws iam update-assume-role-policy \
+          --role-name kube-microvm-operator \
+          --policy-document "$UPDATED" \
+          $PROFILE_FLAG
+      fi
+    fi
+
+    # Create Pod Identity association if not exists
+    EXISTING=$(aws eks list-pod-identity-associations \
+      --cluster-name "$CLUSTER_NAME" \
+      --namespace "$NAMESPACE" \
+      --service-account kube-microvm-operator \
+      --region "$REGION" \
+      $PROFILE_FLAG \
+      --query 'associations[0].associationId' --output text 2>/dev/null || echo "None")
+
+    if [[ "$EXISTING" == "None" || -z "$EXISTING" ]]; then
+      echo "==> Creating Pod Identity association (role: ${ROLE_ARN})"
+      aws eks create-pod-identity-association \
+        --cluster-name "$CLUSTER_NAME" \
+        --namespace "$NAMESPACE" \
+        --service-account kube-microvm-operator \
+        --role-arn "$ROLE_ARN" \
+        --region "$REGION" \
+        $PROFILE_FLAG \
+        --query 'association.associationId' --output text
+    else
+      echo "==> Pod Identity association exists: ${EXISTING}"
+    fi
+
+    # Warn if EKS Auth VPC endpoint missing (required for private subnets)
+    VPC_ID=$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$REGION" $PROFILE_FLAG \
+      --query 'cluster.resourcesVpcConfig.vpcId' --output text 2>/dev/null || echo "")
+    if [[ -n "$VPC_ID" ]]; then
+      EKS_AUTH_EP=$(aws ec2 describe-vpc-endpoints \
+        --filters "Name=vpc-id,Values=${VPC_ID}" "Name=service-name,Values=com.amazonaws.${REGION}.eks-auth" \
+        --region "$REGION" $PROFILE_FLAG \
+        --query 'VpcEndpoints[0].State' --output text 2>/dev/null || echo "None")
+      if [[ "$EKS_AUTH_EP" == "None" || -z "$EKS_AUTH_EP" ]]; then
+        echo "    ⚠️  No eks-auth VPC endpoint found. Pod Identity requires it for private subnets."
+        echo "    Create with: aws ec2 create-vpc-endpoint --vpc-id ${VPC_ID} --service-name com.amazonaws.${REGION}.eks-auth --vpc-endpoint-type Interface --private-dns-enabled --subnet-ids <SUBNETS> --security-group-ids <SG>"
+      fi
+    fi
+  fi
+fi
+
 # Helm upgrade --install
 echo "==> helm upgrade --install ${RELEASE} (namespace: ${NAMESPACE}, dry-run: ${DRY_RUN})"
 helm upgrade --install "$RELEASE" "$CHART" \
