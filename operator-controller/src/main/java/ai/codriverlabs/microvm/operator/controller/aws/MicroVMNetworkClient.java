@@ -4,6 +4,7 @@ import ai.codriverlabs.microvm.aws.lambdacore.LambdaCoreAsyncClient;
 import ai.codriverlabs.microvm.aws.lambdacore.model.*;
 import ai.codriverlabs.microvm.operator.core.model.MicroVMNetworkSpec;
 import java.net.URI;
+import java.util.Optional;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import software.amazon.awssdk.regions.Region;
@@ -22,12 +23,10 @@ public class MicroVMNetworkClient {
 
     public MicroVMNetworkClient(
             @ConfigProperty(name = "microvm.aws.region", defaultValue = "us-east-1") String region,
-            @ConfigProperty(name = "aws.microvm.endpoint", defaultValue = "") String endpoint) {
+            @ConfigProperty(name = "aws.microvm.endpoint") Optional<String> endpoint) {
         var builder = LambdaCoreAsyncClient.builder()
                 .region(Region.of(region));
-        if (endpoint != null && !endpoint.isBlank()) {
-            builder.endpointOverride(URI.create(endpoint));
-        }
+        endpoint.filter(s -> !s.isBlank()).ifPresent(e -> builder.endpointOverride(URI.create(e)));
         this.sdk = builder.build();
     }
 

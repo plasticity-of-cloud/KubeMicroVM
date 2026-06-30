@@ -3,6 +3,7 @@ package ai.codriverlabs.microvm.operator.controller.aws;
 import ai.codriverlabs.microvm.aws.lambdamicrovms.LambdaMicrovmsAsyncClient;
 import ai.codriverlabs.microvm.aws.lambdamicrovms.model.*;
 import java.net.URI;
+import java.util.Optional;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -21,12 +22,10 @@ public class DefaultMicroVMClient implements MicroVMClient {
     @Inject
     public DefaultMicroVMClient(
             @ConfigProperty(name = "aws.region", defaultValue = "us-east-1") String region,
-            @ConfigProperty(name = "aws.microvm.endpoint", defaultValue = "") String endpoint) {
+            @ConfigProperty(name = "aws.microvm.endpoint") Optional<String> endpoint) {
         var builder = LambdaMicrovmsAsyncClient.builder()
                 .region(Region.of(region));
-        if (endpoint != null && !endpoint.isBlank()) {
-            builder.endpointOverride(URI.create(endpoint));
-        }
+        endpoint.filter(s -> !s.isBlank()).ifPresent(e -> builder.endpointOverride(URI.create(e)));
         this.sdk = builder.build();
     }
 
