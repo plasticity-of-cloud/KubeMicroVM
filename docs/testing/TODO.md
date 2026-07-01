@@ -8,6 +8,11 @@ Last updated: 2026-07-01
 |---------|--------|---------|--------|
 | MicroVMImage create/build | v1.0.0-rc1 | e2e-test-plan.md | ✅ All pass |
 | MicroVM run + terminate | v1.0.0-rc1 | e2e-test-plan.md | ✅ All pass |
+| Suspend / Resume | feature/e2e-suspend-resume | uat-suspend-resume.md | ✅ 4/4 core |
+| Image Update (new version) | feature/e2e-image-update | uat-image-update.md | ✅ 5/5 |
+| ReplicaSet scale | feature/e2e-replicaset | uat-replicaset.md | ✅ Fixed + merged |
+| Drift Detection | feature/e2e-drift-autosuspend | uat-drift-autosuspend.md | ✅ All pass |
+| Auto-Suspend / Auto-Resume | feature/e2e-drift-autosuspend | uat-drift-autosuspend.md | ✅ All pass |
 | MicroVMNetwork (VPC egress) | feature/e2e-network-testing | e2e-test-plan.md | ✅ All pass |
 | Networking modes (3 modes) | feature/outbound-connectivity-test | — | ✅ Internet + VPC + no-egress |
 | imageRef resolution by CR name | feature/imageref-resolution | — | ✅ RBAC-enforced |
@@ -112,3 +117,78 @@ terminated externally) and reconciles.
 3. **Drift detection** — quick win, ensures operator recovers from external changes
 4. **Auto-suspend** — quick win, just needs waiting
 5. **Pod sidecar injection** — depends on webhook fix
+
+---
+
+## Known Issues
+
+### kubectl Plugin — Missing Space After Command
+
+When typing `kubectl` and pressing Tab, there is no space inserted between `kubectl` and
+the `microvm` subcommand. Users must explicitly type a space before `microvm`.
+
+**Root cause**: The kubectl plugin binary is named `kubectl-microvm` but the shell completion
+script may not be registering the `microvm` subcommand with proper spacing in bash/zsh.
+
+**Fix needed**: Ensure `kubectl-microvm completion bash/zsh` output is correct and the
+plugin registers itself with kubectl's plugin framework properly.
+
+---
+
+## Installer Script (install_kube_microvm.sh)
+
+**Goal**: A single script customers run to install KubeMicroVM on their cluster.
+Included as part of each GitHub Release and the official installer Docker image.
+
+### Installer Docker Image
+
+Published to GHCR as `ghcr.io/plasticity-of-cloud/kube-microvm-installer:<version>`:
+- Contains: `kubectl`, `helm`, `aws` CLI, `install_kube_microvm.sh`, all Helm charts, CLI binaries (arm64 + amd64)
+- Customer runs: `docker run --rm -it -v ~/.kube:/root/.kube ghcr.io/plasticity-of-cloud/kube-microvm-installer:1.0.0`
+
+### Script Steps (`install_kube_microvm.sh`)
+
+```
+a. --registry <url>   Import images into private registry
+                      - Accept region as parameter (for ECR auto-login)
+                      - Create ECR repos if they don't exist
+                      - Retag and push: kube-microvm-operator, microvm-auth-agent (both amd64 + arm64)
+                      - Persist registry URL to ~/.kube-microvm/config
+
+b. --iam              Create IAM role + policies (CloudFormation)
+                      - Deploy iam/kube-microvm-operator-role.yaml
+                      - Create Pod Identity association per cluster
+                      - Output: role ARN passed to helm installs
+
+c. helm install kube-microvm-operator
+                      - From private registry (if --registry set) or GHCR
+                      - Passes: image registry, role ARN, region
+
+d. helm install microvm-auth-agent (if token injection needed)
+                      - From private registry or GHCR
+                      - Passes: operator endpoint, image registry
+
+e. Install kubectl plugin
+                      - Copies kubectl-microvm binary to $HOME/bin/
+                      - Detects arch (arm64 / amd64), installs correct binary
+
+f. Validate
+                      - kubectl microvm --help  (verifies plugin installed + spacing works)
+                      - kubectl microvm image list-base  (verifies AWS connectivity)
+```
+
+### Parameters
+
+```bash
+./install_kube_microvm.sh \
+  --cluster my-cluster \
+  --region us-east-1 \
+  --registry 123456789.dkr.ecr.us-east-1.amazonaws.com \
+  --iam \
+  --auth-agent
+```
+
+### Feature Branches Needed
+
+- `feature/installer-script` — `install_kube_microvm.sh` + installer Docker image
+- `feature/kubectl-plugin-completion-fix` — fix missing space in kubectl tab completion
