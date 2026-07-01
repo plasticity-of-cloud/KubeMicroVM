@@ -52,11 +52,12 @@ class DriftDetectorTest {
     }
 
     @Test
-    void suspendedWithDesiredRunningReturnsResumeAction() {
+    void suspendedWithDesiredRunningReturnsNoOp() {
+        // RUNNING+SUSPENDED is treated as NoOp to avoid fighting the idle policy.
+        // AWS may auto-suspend a VM via maxIdleDurationSeconds; the operator reflects
+        // the state without resuming. User must explicitly patch desiredState to resume.
         DriftResult result = detector.detectDrift(DesiredState.RUNNING, MicroVMState.SUSPENDED);
-        assertInstanceOf(DriftResult.ActionRequired.class, result);
-        DriftResult.ActionRequired action = (DriftResult.ActionRequired) result;
-        assertEquals(DriftAction.RESUME, action.action());
+        assertInstanceOf(DriftResult.NoOp.class, result);
     }
 
     @Test
