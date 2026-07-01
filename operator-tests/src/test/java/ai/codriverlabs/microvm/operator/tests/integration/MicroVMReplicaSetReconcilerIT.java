@@ -34,6 +34,9 @@ class MicroVMReplicaSetReconcilerIT {
         var rs = testReplicaSet("my-rs", 3);
         client.resource(rs).create();
 
+        // Reconciler creates 1 child per cycle to avoid over-creation race
+        reconciler.reconcile(rs, mockContext());
+        reconciler.reconcile(rs, mockContext());
         reconciler.reconcile(rs, mockContext());
 
         List<MicroVM> children = client.resources(MicroVM.class).inNamespace("default")

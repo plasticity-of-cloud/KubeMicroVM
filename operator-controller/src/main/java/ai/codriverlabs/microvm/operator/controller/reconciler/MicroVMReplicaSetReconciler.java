@@ -36,7 +36,7 @@ public class MicroVMReplicaSetReconciler
 
     private static final Logger LOG = Logger.getLogger(MicroVMReplicaSetReconciler.class);
     private static final Duration RESYNC = Duration.ofSeconds(30);
-    private static final int MAX_CREATES_PER_RECONCILE = 5;
+    private static final int MAX_CREATES_PER_RECONCILE = 1;
     private static final long FAILED_EVICTION_THRESHOLD_S = 60;
     private static final long PENDING_STUCK_THRESHOLD_S = 300;
     public static final String OWNER_LABEL = "lambda.aws.amazon.com/replicaset-name";
@@ -100,11 +100,10 @@ public class MicroVMReplicaSetReconciler
                 .count();
 
         if (current < desired) {
-            // Scale-up: create missing children, throttled
-            int toCreate = Math.min(desired - current, MAX_CREATES_PER_RECONCILE);
-            for (int i = 0; i < toCreate; i++) {
-                createChild(rs, ns, name, spec);
-            }
+            // Scale-up: create 1 child per reconcile to avoid over-creation race
+            createChild(rs, ns, name, spec);
+            updateStatus(rs, children, desired);
+            return UpdateControl.patchStatus(rs).rescheduleAfter(Duration.ofSeconds(3));
         } else if (current > desired) {
             // Scale-down: select victims by policy
             int toTerminate = current - desired;
