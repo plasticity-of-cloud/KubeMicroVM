@@ -36,8 +36,10 @@ public class DriftDetector {
         return switch (actual) {
             case RUNNING -> new DriftResult.NoOp("Aligned: Running");
             case PENDING -> new DriftResult.NoOp("Transitional: provisioning in progress");
-            case SUSPENDING -> new DriftResult.NoOp("Transitional: suspending (will resume after)");
-            case SUSPENDED -> new DriftResult.ActionRequired(DriftAction.RESUME, MicroVMState.RUNNING);
+            case SUSPENDING -> new DriftResult.NoOp("Transitional: suspending (idle policy or explicit suspend)");
+            // SUSPENDED: could be idle policy auto-suspend. Update status only — do not auto-resume.
+            // User must explicitly set desiredState: Running to resume a VM suspended by idle policy.
+            case SUSPENDED -> new DriftResult.NoOp("Auto-suspended by idle policy; update status only");
             case TERMINATED -> new DriftResult.ActionRequired(DriftAction.RECREATE, MicroVMState.PENDING);
             case FAILED -> new DriftResult.ActionRequired(DriftAction.RECREATE, MicroVMState.PENDING);
             case TERMINATING -> new DriftResult.Error("Cannot resume: termination in progress");
