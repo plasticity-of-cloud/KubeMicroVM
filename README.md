@@ -1,6 +1,6 @@
 # KubeMicroVM
 
-Kubernetes ACK-compatible controllers and kubectl plugin for AWS Lambda MicroVMs.  
+Kubernetes operator and kubectl plugin for AWS Lambda MicroVMs.  
 Built with **Quarkus**, **JOSDK**, and **GraalVM native image** (Java 25).
 
 ## Components
