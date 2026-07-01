@@ -13,6 +13,8 @@ public class MicroVMStatus {
     private String microVmId;
     private String endpointUrl;
     private String imageVersion;
+    private String resolvedImageArn;
+    private String resolvedImageVersion;
     private List<Condition> conditions = new ArrayList<>();
     private Instant lastTransitionTime;
     private Long observedGeneration;
@@ -27,6 +29,10 @@ public class MicroVMStatus {
     public void setEndpointUrl(String endpointUrl) { this.endpointUrl = endpointUrl; }
     public String getImageVersion() { return imageVersion; }
     public void setImageVersion(String imageVersion) { this.imageVersion = imageVersion; }
+    public String getResolvedImageArn() { return resolvedImageArn; }
+    public void setResolvedImageArn(String resolvedImageArn) { this.resolvedImageArn = resolvedImageArn; }
+    public String getResolvedImageVersion() { return resolvedImageVersion; }
+    public void setResolvedImageVersion(String resolvedImageVersion) { this.resolvedImageVersion = resolvedImageVersion; }
     public List<Condition> getConditions() { return conditions; }
     public void setConditions(List<Condition> conditions) { this.conditions = conditions; }
     public Instant getLastTransitionTime() { return lastTransitionTime; }

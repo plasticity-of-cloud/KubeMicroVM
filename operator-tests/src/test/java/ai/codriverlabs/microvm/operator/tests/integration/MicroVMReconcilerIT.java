@@ -135,6 +135,20 @@ class MicroVMReconcilerIT {
     // --- helpers ---
 
     private MicroVM testMicroVM(String name, MicroVMState state) {
+        // Create corresponding MicroVMImage CR so resolution works
+        var image = new MicroVMImage();
+        image.setMetadata(new ObjectMetaBuilder()
+                .withName("python-sandbox")
+                .withNamespace("default")
+                .build());
+        image.setSpec(new MicroVMImageSpec());
+        var imageStatus = new MicroVMImageStatus();
+        imageStatus.setImageArn("arn:aws:lambda:us-east-1:123456789012:microvm-image:python-sandbox");
+        imageStatus.setImageState("CREATED");
+        imageStatus.setActiveVersion("1.0");
+        image.setStatus(imageStatus);
+        client.resources(MicroVMImage.class).inNamespace("default").resource(image).createOrReplace();
+
         var vm = new MicroVM();
         vm.setMetadata(new ObjectMetaBuilder()
                 .withName(name)
