@@ -7,6 +7,7 @@ import ai.codriverlabs.microvm.operator.core.enums.MicroVMState;
 import ai.codriverlabs.microvm.operator.core.model.Condition;
 import ai.codriverlabs.microvm.operator.core.model.MicroVM;
 import ai.codriverlabs.microvm.operator.core.model.MicroVMImage;
+import ai.codriverlabs.microvm.operator.core.model.MicroVMNetwork;
 import ai.codriverlabs.microvm.operator.core.model.MicroVMSpec;
 import ai.codriverlabs.microvm.operator.core.model.MicroVMStatus;
 import ai.codriverlabs.microvm.operator.core.state.MicroVMStateMachine;
@@ -22,6 +23,7 @@ import org.jboss.logging.Logger;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -216,13 +218,25 @@ public class MicroVMReconciler implements Reconciler<MicroVM>, Cleaner<MicroVM> 
         resource.getStatus().setResolvedImageArn(imageIdentifier);
         resource.getStatus().setResolvedImageVersion(imageVersion);
 
+        // --- Network reference resolution ---
+        List<String> egressConnectors = spec.getEgressNetworkConnectors() != null
+                ? new java.util.ArrayList<>(spec.getEgressNetworkConnectors()) : new java.util.ArrayList<>();
+        if (spec.getNetworkRef() != null && !spec.getNetworkRef().isBlank()) {
+            var netResolution = resolveNetworkRef(spec.getNetworkRef(), namespace);
+            if (netResolution.error != null) {
+                return transitionState(resource, MicroVMState.FAILED, netResolution.reason, netResolution.error);
+            }
+            egressConnectors.add(netResolution.connectorArn);
+            LOG.infof("Resolved networkRef '%s' → %s", spec.getNetworkRef(), netResolution.connectorArn);
+        }
+
         RunMicroVMRequest request = new RunMicroVMRequest(
             imageIdentifier,
             imageVersion,
             spec.getExecutionRoleArn(),
             spec.getRunHookPayload(),
             spec.getIngressNetworkConnectors(),
-            spec.getEgressNetworkConnectors(),
+            egressConnectors,
             spec.getMaxIdleDurationSeconds(),
             spec.getSuspendedDurationSeconds(),
             spec.getAutoResumeEnabled(),
@@ -292,6 +306,39 @@ public class MicroVMReconciler implements Reconciler<MicroVM>, Cleaner<MicroVM> 
     private record ImageResolution(String imageArn, String imageVersion, String reason, String error) {
         static ImageResolution success(String arn, String version) { return new ImageResolution(arn, version, null, null); }
         static ImageResolution error(String reason, String message) { return new ImageResolution(null, null, reason, message); }
+    }
+
+    /**
+     * Resolves a MicroVMNetwork CR name to its connector ARN.
+     */
+    private NetworkResolution resolveNetworkRef(String networkRef, String namespace) {
+        MicroVMNetwork network = kubernetesClient.resources(MicroVMNetwork.class)
+                .inNamespace(namespace)
+                .withName(networkRef)
+                .get();
+
+        if (network == null) {
+            return NetworkResolution.error("NetworkNotFound",
+                    "MicroVMNetwork '" + networkRef + "' not found in namespace '" + namespace + "'");
+        }
+
+        var status = network.getStatus();
+        if (status == null || status.getConnectorArn() == null) {
+            return NetworkResolution.error("NetworkNotReady",
+                    "MicroVMNetwork '" + networkRef + "' has not been created yet (no connectorArn)");
+        }
+
+        if (!"ACTIVE".equals(status.getConnectorState())) {
+            return NetworkResolution.error("NetworkNotReady",
+                    "MicroVMNetwork '" + networkRef + "' connector is in state '" + status.getConnectorState() + "', expected ACTIVE");
+        }
+
+        return NetworkResolution.success(status.getConnectorArn());
+    }
+
+    private record NetworkResolution(String connectorArn, String reason, String error) {
+        static NetworkResolution success(String arn) { return new NetworkResolution(arn, null, null); }
+        static NetworkResolution error(String reason, String message) { return new NetworkResolution(null, reason, message); }
     }
 
     private UpdateControl<MicroVM> handleCreatingState(MicroVM resource) {

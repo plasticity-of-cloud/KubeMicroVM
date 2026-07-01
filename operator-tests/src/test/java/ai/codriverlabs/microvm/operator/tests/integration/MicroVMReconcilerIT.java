@@ -132,6 +132,49 @@ class MicroVMReconcilerIT {
         verify(mockClient).terminateMicroVM("mvm-abc123");
     }
 
+    @Test
+    @DisplayName("PENDING with networkRef: resolves MicroVMNetwork CR to connector ARN")
+    void pending_withNetworkRef_resolvesConnectorArn() throws Exception {
+        // Create MicroVMNetwork with ACTIVE state
+        var network = new MicroVMNetwork();
+        network.setMetadata(new ObjectMetaBuilder().withName("my-egress").withNamespace("default").build());
+        network.setSpec(new MicroVMNetworkSpec());
+        var netStatus = new MicroVMNetworkStatus();
+        netStatus.setConnectorArn("arn:aws:lambda:us-east-1:123456789012:network-connector:my-egress");
+        netStatus.setConnectorState("ACTIVE");
+        network.setStatus(netStatus);
+        client.resources(MicroVMNetwork.class).inNamespace("default").resource(network).createOrReplace();
+
+        var vm = testMicroVM("test-vm-net", null);
+        vm.getSpec().setNetworkRef("my-egress");
+
+        when(mockClient.runMicroVM(any())).thenReturn(CompletableFuture.completedFuture(
+                new RunMicroVMResponse("mvm-net123", "mvm-net123.lambda-microvm.us-east-1.on.aws", "RUNNING")));
+
+        var result = reconciler.reconcile(vm, mockContext());
+
+        assertTrue(result.isPatchStatus());
+        assertEquals(MicroVMState.RUNNING, vm.getStatus().getState());
+        // Verify the connector ARN was passed to runMicroVM
+        var captor = org.mockito.ArgumentCaptor.forClass(RunMicroVMRequest.class);
+        verify(mockClient).runMicroVM(captor.capture());
+        assertTrue(captor.getValue().egressNetworkConnectors().contains(
+                "arn:aws:lambda:us-east-1:123456789012:network-connector:my-egress"));
+    }
+
+    @Test
+    @DisplayName("PENDING with networkRef not found: transitions to FAILED")
+    void pending_networkRefNotFound_fails() throws Exception {
+        var vm = testMicroVM("test-vm-nonet", null);
+        vm.getSpec().setNetworkRef("nonexistent-network");
+
+        var result = reconciler.reconcile(vm, mockContext());
+
+        assertTrue(result.isPatchStatus());
+        assertEquals(MicroVMState.FAILED, vm.getStatus().getState());
+        assertTrue(vm.getStatus().getConditions().get(0).getMessage().contains("not found"));
+    }
+
     // --- helpers ---
 
     private MicroVM testMicroVM(String name, MicroVMState state) {
