@@ -51,8 +51,12 @@ Resources:
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
-          # MicroVM lifecycle management
-          - Sid: MicroVMOperations
+          # All Lambda MicroVM operations.
+          # NOTE: Resource must be '*' because the service uses varying resource ARNs
+          # in its authorization context (e.g. GetMicrovm evaluates against microvm-image ARN,
+          # Create actions evaluate against Resource:*). Region isolation is enforced by
+          # deploying this stack per-region and the service only operating within its region.
+          - Sid: LambdaMicroVMAllActions
             Effect: Allow
             Action:
               - lambda:RunMicrovm
@@ -63,12 +67,6 @@ Resources:
               - lambda:TerminateMicrovm
               - lambda:CreateMicrovmAuthToken
               - lambda:CreateMicrovmShellAuthToken
-            Resource: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:microvm:*'
-
-          # MicroVM image management (region-scoped)
-          - Sid: MicroVMImageOperations
-            Effect: Allow
-            Action:
               - lambda:CreateMicrovmImage
               - lambda:GetMicrovmImage
               - lambda:UpdateMicrovmImage
@@ -80,36 +78,16 @@ Resources:
               - lambda:DeleteMicrovmImageVersion
               - lambda:GetMicrovmImageBuild
               - lambda:ListMicrovmImageBuilds
-            Resource: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:microvm-image:*'
-
-          # AWS-managed base images (read-only, cross-account)
-          - Sid: ManagedBaseImages
-            Effect: Allow
-            Action:
-              - lambda:ListManagedMicrovmImages
-              - lambda:ListManagedMicrovmImageVersions
-            Resource: '*'
-
-          # Network connector management (region-scoped, VPC resources are regional)
-          - Sid: NetworkConnectorOperations
-            Effect: Allow
-            Action:
               - lambda:CreateNetworkConnector
               - lambda:GetNetworkConnector
               - lambda:UpdateNetworkConnector
               - lambda:DeleteNetworkConnector
               - lambda:ListNetworkConnectors
               - lambda:PassNetworkConnector
-            Resource: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:network-connector:*'
-
-          # Tagging (region-scoped)
-          - Sid: Tagging
-            Effect: Allow
-            Action:
               - lambda:TagResource
               - lambda:UntagResource
               - lambda:ListTags
-            Resource: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:*'
+            Resource: '*'
 
           # STS for caller identity verification (health check)
           - Sid: Identity

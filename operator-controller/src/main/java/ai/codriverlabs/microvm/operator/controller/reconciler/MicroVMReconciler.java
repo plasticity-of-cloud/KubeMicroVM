@@ -6,6 +6,7 @@ import ai.codriverlabs.microvm.operator.core.enums.DesiredState;
 import ai.codriverlabs.microvm.operator.core.enums.MicroVMState;
 import ai.codriverlabs.microvm.operator.core.model.Condition;
 import ai.codriverlabs.microvm.operator.core.model.MicroVM;
+import ai.codriverlabs.microvm.operator.core.model.MicroVMImage;
 import ai.codriverlabs.microvm.operator.core.model.MicroVMSpec;
 import ai.codriverlabs.microvm.operator.core.model.MicroVMStatus;
 import ai.codriverlabs.microvm.operator.core.state.MicroVMStateMachine;
@@ -37,7 +38,7 @@ import java.util.concurrent.TimeUnit;
     ),
     @io.quarkiverse.operatorsdk.annotations.RBACRule(
         apiGroups = "lambda.aws.amazon.com",
-        resources = {"microvmtemplates", "microvmnetworks"},
+        resources = {"microvmtemplates", "microvmnetworks", "microvmimages"},
         verbs = {"get", "list", "watch"}
     )
 })
@@ -201,9 +202,23 @@ public class MicroVMReconciler implements Reconciler<MicroVM>, Cleaner<MicroVM> 
 
     private UpdateControl<MicroVM> handlePendingState(MicroVM resource) {
         MicroVMSpec spec = resource.getSpec();
+        String namespace = resource.getMetadata().getNamespace();
+
+        // --- Image reference resolution ---
+        String imageIdentifier;
+        String imageVersion;
+        var resolution = resolveImageRef(spec.getImageRef(), spec.getImageVersion(), namespace);
+        if (resolution.error != null) {
+            return transitionState(resource, MicroVMState.FAILED, resolution.reason, resolution.error);
+        }
+        imageIdentifier = resolution.imageArn;
+        imageVersion = resolution.imageVersion;
+        resource.getStatus().setResolvedImageArn(imageIdentifier);
+        resource.getStatus().setResolvedImageVersion(imageVersion);
+
         RunMicroVMRequest request = new RunMicroVMRequest(
-            spec.getImageRef(),
-            spec.getImageVersion(),
+            imageIdentifier,
+            imageVersion,
             spec.getExecutionRoleArn(),
             spec.getRunHookPayload(),
             spec.getIngressNetworkConnectors(),
@@ -226,6 +241,57 @@ public class MicroVMReconciler implements Reconciler<MicroVM>, Cleaner<MicroVM> 
         } catch (Exception e) {
             return handleCreationError(resource, e);
         }
+    }
+
+    /**
+     * Resolves a MicroVMImage CR name to an AWS image ARN.
+     * Returns the resolved ARN and version, or an error message.
+     */
+    private ImageResolution resolveImageRef(String imageRef, String requestedVersion, String namespace) {
+        if (imageRef == null || imageRef.isBlank()) {
+            return ImageResolution.error("ImageRefMissing", "spec.imageRef is required");
+        }
+
+        // Look up MicroVMImage CR in the same namespace
+        MicroVMImage image = kubernetesClient.resources(MicroVMImage.class)
+                .inNamespace(namespace)
+                .withName(imageRef)
+                .get();
+
+        if (image == null) {
+            return ImageResolution.error("ImageNotFound",
+                    "MicroVMImage '" + imageRef + "' not found in namespace '" + namespace + "'");
+        }
+
+        var status = image.getStatus();
+        if (status == null || status.getImageArn() == null) {
+            return ImageResolution.error("ImageNotReady",
+                    "MicroVMImage '" + imageRef + "' has not been created yet (no imageArn)");
+        }
+
+        String imageState = status.getImageState();
+        if (!"CREATED".equals(imageState) && !"UPDATED".equals(imageState)) {
+            return ImageResolution.error("ImageNotReady",
+                    "MicroVMImage '" + imageRef + "' is in state '" + imageState + "', expected CREATED or UPDATED");
+        }
+
+        // Resolve version: use requested, or fall back to activeVersion
+        String resolvedVersion = requestedVersion;
+        if (resolvedVersion == null || resolvedVersion.isBlank()) {
+            resolvedVersion = status.getActiveVersion();
+            if (resolvedVersion == null || resolvedVersion.isBlank()) {
+                return ImageResolution.error("NoActiveVersion",
+                        "MicroVMImage '" + imageRef + "' has no active version. Set spec.imageVersion or activate a version.");
+            }
+        }
+
+        LOG.infof("Resolved imageRef '%s' → %s (version %s)", imageRef, status.getImageArn(), resolvedVersion);
+        return ImageResolution.success(status.getImageArn(), resolvedVersion);
+    }
+
+    private record ImageResolution(String imageArn, String imageVersion, String reason, String error) {
+        static ImageResolution success(String arn, String version) { return new ImageResolution(arn, version, null, null); }
+        static ImageResolution error(String reason, String message) { return new ImageResolution(null, null, reason, message); }
     }
 
     private UpdateControl<MicroVM> handleCreatingState(MicroVM resource) {
